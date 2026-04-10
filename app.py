@@ -92,6 +92,96 @@ def berechne_wacc(info):
     fk_anteil            = gesamtschulden / gesamt if gesamt > 0 else 0.0
     return ek_anteil * eigenkapitalkosten + fk_anteil * fk_netto, beta, eigenkapitalkosten, fk_netto, ek_anteil, fk_anteil
 
+def berechne_value_score(e):
+    punkte = 0
+    sektor  = e.get("sektor", "") or ""
+    fcf     = e.get("fcf", 0) or 0
+    kein_dcf = any(s in sektor for s in ["Financial", "Utilities", "Real Estate"])
+
+    # 1. DCF-Abweichung (max 25 Punkte)
+    if not kein_dcf and fcf > 0:
+        abw = e.get("abweichung", 0) or 0
+        if abw < -40:    punkte += 25
+        elif abw < -20:  punkte += 18
+        elif abw < 0:    punkte += 10
+        elif abw < 20:   punkte += 4
+
+    # 2. FCF-Qualität (max 20 Punkte)
+    fcf_cagr = e.get("fcf_cagr", 0) or 0
+    marktcap = e.get("marktcap", 0) or 0
+    fcf_rendite = (fcf / marktcap * 100) if marktcap > 0 and fcf > 0 else 0
+    if not kein_dcf:
+        if fcf > 0:            punkte += 5
+        if fcf_rendite > 8:    punkte += 8
+        elif fcf_rendite > 5:  punkte += 5
+        elif fcf_rendite > 3:  punkte += 2
+        if fcf_cagr > 10:      punkte += 7
+        elif fcf_cagr > 5:     punkte += 4
+        elif fcf_cagr > 0:     punkte += 2
+
+    # 3. Bewertungsmultiplikatoren – branchenspezifisch (max 25 Punkte)
+    kgv  = e.get("kgv", 0) or 0
+    kbv  = e.get("kbv", 0) or 0
+    eveb = e.get("ev_ebitda", 0) or 0
+    roe  = e.get("roe", 0) or 0
+    roe  = roe * 100 if roe < 2 else roe
+
+    if "Financial" in sektor:
+        if 0 < kbv < 0.8:    punkte += 15
+        elif 0 < kbv < 1.2:  punkte += 10
+        elif 0 < kbv < 1.8:  punkte += 5
+        if roe > 15:          punkte += 10
+        elif roe > 10:        punkte += 6
+        elif roe > 7:         punkte += 3
+    elif "Utilities" in sektor or "Real Estate" in sektor:
+        div = e.get("dividende", 0) or 0
+        div = div * 100 if div < 1 else div
+        if 0 < kgv < 15:     punkte += 12
+        elif 0 < kgv < 20:   punkte += 7
+        elif 0 < kgv < 25:   punkte += 3
+        if div > 4:           punkte += 13
+        elif div > 3:         punkte += 8
+        elif div > 2:         punkte += 4
+    elif "Energy" in sektor:
+        if 0 < eveb < 5:     punkte += 15
+        elif 0 < eveb < 8:   punkte += 9
+        elif 0 < eveb < 12:  punkte += 4
+        if 0 < kgv < 12:     punkte += 10
+        elif 0 < kgv < 18:   punkte += 5
+    else:
+        if 0 < kgv < 12:     punkte += 9
+        elif 0 < kgv < 18:   punkte += 5
+        elif 0 < kgv < 25:   punkte += 2
+        if 0 < kbv < 1.5:    punkte += 8
+        elif 0 < kbv < 3:    punkte += 4
+        elif 0 < kbv < 5:    punkte += 2
+        if 0 < eveb < 8:     punkte += 8
+        elif 0 < eveb < 12:  punkte += 4
+
+    # 4. Profitabilität (max 15 Punkte)
+    marge = e.get("nettomarge", 0) or 0
+    marge = marge * 100 if marge < 1 else marge
+    if roe > 20:      punkte += 8
+    elif roe > 12:    punkte += 5
+    elif roe > 8:     punkte += 2
+    if marge > 20:    punkte += 7
+    elif marge > 10:  punkte += 4
+    elif marge > 5:   punkte += 2
+
+    # 5. Finanzielle Stabilität (max 15 Punkte)
+    schulden = e.get("nettoverschuldung", 0) or 0
+    marktcap = e.get("marktcap", 1) or 1
+    schulden_ratio = schulden / marktcap if marktcap > 0 else 0
+    div = e.get("dividende", 0) or 0
+    div = div * 100 if div < 1 else div
+    grenze = (1.5, 3.0, 5.0) if kein_dcf else (0.3, 0.8, 1.5)
+    if schulden_ratio < grenze[0]:    punkte += 8
+    elif schulden_ratio < grenze[1]:  punkte += 5
+    elif schulden_ratio < grenze[2]:  punkte += 2
+    if div > 0:   punkte += 4
+    if div > 3:   punkte += 3
+
+    return min(round(punkte), 100)
 
 def dcf_berechnen(symbol, wachstum, terminal, sicherheit, wacc_override=None):
     try:
@@ -100,6 +190,12 @@ def dcf_berechnen(symbol, wachstum, terminal, sicherheit, wacc_override=None):
         cashflow = aktie.cashflow
         finanzen = aktie.financials
     except Exception as e:
+        
+        ergebnis_dict = {
+            # ... alle bisherigen Felder ...
+        }
+        ergebnis_dict["value_score"] = berechne_value_score(ergebnis_dict)
+        return ergebnis_dict, None
         return None, str(e)
 
     if not info or not info.get("longName"):
@@ -204,6 +300,7 @@ def ergebnis_zu_db_eintrag(e):
         "Innerer Wert":      e["innerer_wert"],
         "Mit Marge":         e["mit_marge"],
         "Abweichung %":      e["abweichung"],
+        "Value Score":       e.get("value_score", 0),
         "WACC %":            e["wacc"],
         "KGV":               e["kgv"],
         "Forward KGV":       e["forward_kgv"],
@@ -529,9 +626,9 @@ elif seite == "📊 Datenbank":
             )
         with col3:
             sortierung = st.selectbox(
-                "Sortieren nach",
-                ["Abweichung %", "KGV", "FCF CAGR %", "ROE %", "Name"]
-            )
+            "Sortieren nach",
+            ["Value Score", "Abweichung %", "KGV", "FCF CAGR %", "ROE %", "Name"]
+        )
 
         gefiltert = df.copy()
         if sektor_filter != "Alle":
@@ -655,11 +752,22 @@ elif seite == "💼 Portfolio":
         gesamt_wert   = df_p["Wert ($)"].sum()
         gesamt_perf   = (gesamt_wert - gesamt_invest) / gesamt_invest * 100
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Positionen",     len(df_p))
-        col2.metric("Investiert",     f"${gesamt_invest:,.2f}")
-        col3.metric("Aktueller Wert", f"${gesamt_wert:,.2f}")
-        col4.metric("Performance",    f"{gesamt_perf:+.1f}%")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Aktueller Kurs", f"${ergebnis['kurs']:.2f}")
+        col2.metric("Innerer Wert", f"${ergebnis['innerer_wert']:.2f}")
+        col3.metric("Mit Sicherheitsmarge", f"${ergebnis['mit_marge']:.2f}")
+        abw = ergebnis['abweichung']
+        col4.metric(
+            "Bewertung",
+            f"{abw:+.1f}%",
+            delta="Überbewertet" if abw > 0 else "Unterbewertet",
+            delta_color="inverse"
+        )
+        col5.metric(
+            "Value Score",
+            f"{ergebnis.get('value_score', 0)}/100",
+            delta="stark" if ergebnis.get('value_score', 0) > 60 else "mittel" if ergebnis.get('value_score', 0) > 40 else "schwach"
+        )
 
         st.divider()
         st.dataframe(df_p, use_container_width=True, hide_index=True)
