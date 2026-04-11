@@ -4,6 +4,29 @@ import pandas as pd
 import plotly.express as px
 import time
 
+# Session State komplett zurücksetzen falls altes Format
+if "letztes_ergebnis" in st.session_state:
+    if st.session_state.letztes_ergebnis is not None:
+        if not isinstance(st.session_state.letztes_ergebnis, dict):
+            del st.session_state.letztes_ergebnis
+        elif "name" not in st.session_state.letztes_ergebnis:
+            del st.session_state.letztes_ergebnis
+
+if "datenbank" not in st.session_state:
+    st.session_state.datenbank = []
+if "portfolio" not in st.session_state:
+    st.session_state.portfolio = []
+if "letztes_ergebnis" not in st.session_state:
+    st.session_state.letztes_ergebnis = None
+if "such_symbole" not in st.session_state:
+    st.session_state.such_symbole = []
+if "such_namen" not in st.session_state:
+    st.session_state.such_namen = []
+if "p_namen" not in st.session_state:
+    st.session_state.p_namen = []
+if "p_symbole" not in st.session_state:
+    st.session_state.p_symbole = []
+
 st.set_page_config(
     page_title="Aktien-Analyse Tool",
     page_icon="📈",
@@ -345,18 +368,7 @@ def aktie_suchen(suchbegriff):
 # ================================================================
 # SESSION STATE
 # ================================================================
-if "datenbank" not in st.session_state:
-    st.session_state.datenbank = []
-if "portfolio" not in st.session_state:
-    st.session_state.portfolio = []
-if "such_symbole" not in st.session_state:
-    st.session_state.such_symbole = []
-if "letztes_ergebnis" not in st.session_state:
-    st.session_state.letztes_ergebnis = None
-else:
-    # Altes Ergebnis zurücksetzen falls es nicht das richtige Format hat
-    if st.session_state.letztes_ergebnis and "name" not in st.session_state.letztes_ergebnis:
-        st.session_state.letztes_ergebnis = None
+
 
 # ================================================================
 # SIDEBAR
