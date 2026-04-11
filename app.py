@@ -500,7 +500,7 @@ if st.sidebar.button("🔄 Reload Data"):
     st.rerun()
 
 # TEMPORÄRER DEBUG
-if st.sidebar.button("🔧 Test GitHub"):
+if st.sidebar.button("🔧 Test GitHub", key="debug_github"):
     st.sidebar.write(f"Token vorhanden: {bool(GITHUB_TOKEN)}")
     st.sidebar.write(f"Token Länge: {len(GITHUB_TOKEN)}")
     st.sidebar.write(f"Repo: {GITHUB_REPO}")
@@ -514,7 +514,7 @@ if st.sidebar.button("🔧 Test GitHub"):
 st.sidebar.divider()
 st.sidebar.caption(f"Database: {len(st.session_state.database)} stocks")
 st.sidebar.caption(f"Portfolio: {len(st.session_state.portfolio)} positions")
-if st.sidebar.button("🔄 Reload Data"):
+if st.sidebar.button("🔄 Reload Data", key="reload_data"):
     st.session_state.database, st.session_state.db_sha   = load_database()
     st.session_state.portfolio, st.session_state.port_sha = load_portfolio()
     st.rerun()
