@@ -353,6 +353,10 @@ if "such_symbole" not in st.session_state:
     st.session_state.such_symbole = []
 if "letztes_ergebnis" not in st.session_state:
     st.session_state.letztes_ergebnis = None
+else:
+    # Altes Ergebnis zurücksetzen falls es nicht das richtige Format hat
+    if st.session_state.letztes_ergebnis and "name" not in st.session_state.letztes_ergebnis:
+        st.session_state.letztes_ergebnis = None
 
 # ================================================================
 # SIDEBAR
