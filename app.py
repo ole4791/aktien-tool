@@ -90,45 +90,32 @@ if st.session_state.last_result is not None:
         st.session_state.last_result = None
 
 # ================================================================
-# VALUE UNIVERSE – 200 stocks
+# VALUE UNIVERSE
 # ================================================================
 VALUE_UNIVERSE = [
-    # USA – Consumer Staples
     "KO","PEP","PG","CL","GIS","K","MKC","SJM","CAG","HRL",
     "MCD","YUM","DPZ","CMG","WMT","COST","TGT","KR","SYY","MO",
-    # USA – Healthcare
     "JNJ","ABT","MDT","SYK","BSX","BDX","ZBH","EW","ISRG","RMD",
     "PFE","MRK","LLY","ABBV","BMY","AMGN","GILD","BIIB","REGN","VRTX",
     "CVS","UNH","HUM","CI","ELV","MCK","CAH","ABC","MOH","CNC",
-    # USA – Industrials
     "MMM","HON","GE","CAT","DE","EMR","ITW","ETN","PH","ROK",
     "DOV","AME","FTV","XYL","GNRC","ROP","IDEX","IR","TT","CARR",
     "UPS","FDX","CSX","NSC","UNP","WAB","EXPD","CHRW","JBHT","ODFL",
-    # USA – Technology (stable FCF)
     "AAPL","MSFT","CSCO","IBM","ORCL","TXN","QCOM","ADI","KLAC","LRCX",
     "AMAT","MSI","CTSH","ACN","INTU","PAYX","ADP","FISV","FIS","GPN",
-    # USA – Financials
     "BRK-B","JPM","BAC","WFC","USB","TFC","PNC","MTB","CFG","FITB",
     "AXP","V","MA","DFS","COF","SYF","AIG","PRU","MET","AFL",
     "BLK","TROW","BEN","IVZ","AMG","WTW","AON","MMC","CB","TRV",
-    # USA – Energy
     "XOM","CVX","COP","SLB","HAL","BKR","PSX","VLO","MPC","PXD",
     "EOG","DVN","MRO","OXY","HES","EQT",
-    # USA – Utilities & Real Estate
     "NEE","DUK","SO","D","AEP","EXC","SRE","XEL","ES","ETR",
     "AMT","PLD","CCI","EQIX","PSA","O","SPG","WELL","AVB","EQR",
-    # Germany
     "SAP.DE","SIE.DE","ALV.DE","MUV2.DE","BMW.DE","MBG.DE","VOW3.DE",
     "BAS.DE","BAYN.DE","DBK.DE","DTE.DE","RWE.DE","HEN3.DE","ADS.DE","IFX.DE",
-    # UK
     "SHEL.L","BP.L","HSBA.L","AZN.L","GSK.L","ULVR.L","DGE.L","BATS.L",
-    # Switzerland
     "NESN.SW","NOVN.SW","ROG.SW","ZURN.SW","ABBN.SW",
-    # Netherlands
     "ASML.AS","INGA.AS","PHIA.AS","HEIA.AS",
-    # France
     "OR.PA","TTE.PA","SAN.PA","BNP.PA","AIR.PA","MC.PA",
-    # Japan
     "7203.T","6758.T","9432.T","8306.T","4502.T",
 ]
 
@@ -153,18 +140,18 @@ def calculate_fcf_base(cashflow):
 
 
 def calculate_wacc(info):
-    beta      = float(info.get("beta") or 1.0)
-    debt      = float(info.get("totalDebt") or 0)
-    mktcap    = float(info.get("marketCap") or 0)
-    interest  = float(info.get("interestExpense") or 0)
-    tax       = float(info.get("effectiveTaxRate") or 0.21)
-    cost_eq   = 0.04 + beta * 0.055
-    cost_debt = abs(interest) / debt if debt > 0 and interest else 0.04
+    beta       = float(info.get("beta") or 1.0)
+    debt       = float(info.get("totalDebt") or 0)
+    mktcap     = float(info.get("marketCap") or 0)
+    interest   = float(info.get("interestExpense") or 0)
+    tax        = float(info.get("effectiveTaxRate") or 0.21)
+    cost_eq    = 0.04 + beta * 0.055
+    cost_debt  = abs(interest) / debt if debt > 0 and interest else 0.04
     cost_debt_at = cost_debt * (1 - tax)
-    total     = mktcap + debt
-    eq_weight = mktcap / total if total > 0 else 1.0
+    total      = mktcap + debt
+    eq_weight  = mktcap / total if total > 0 else 1.0
     debt_weight = debt / total if total > 0 else 0.0
-    wacc      = eq_weight * cost_eq + debt_weight * cost_debt_at
+    wacc       = eq_weight * cost_eq + debt_weight * cost_debt_at
     return wacc, beta, cost_eq, cost_debt_at, eq_weight, debt_weight
 
 
@@ -174,32 +161,29 @@ def calculate_value_score_detail(e):
     fcf      = e.get("fcf") or 0
     no_dcf   = any(s in sector for s in ["Financial","Utilities","Real Estate"])
 
-    # 1. DCF Deviation
     dcf_pts = 0
     if not no_dcf and fcf > 0:
         dev = e.get("deviation") or 0
-        if dev < -40:    dcf_pts = 25
-        elif dev < -20:  dcf_pts = 18
-        elif dev < 0:    dcf_pts = 10
-        elif dev < 20:   dcf_pts = 4
+        if dev < -40:   dcf_pts = 25
+        elif dev < -20: dcf_pts = 18
+        elif dev < 0:   dcf_pts = 10
+        elif dev < 20:  dcf_pts = 4
     details["DCF Deviation"] = {"points": dcf_pts, "max": 25}
 
-    # 2. FCF Quality
-    fcf_pts     = 0
-    mktcap      = e.get("market_cap") or 0
-    fcf_yield   = (fcf / mktcap * 100) if mktcap > 0 and fcf > 0 else 0
-    fcf_cagr    = e.get("fcf_cagr") or 0
+    fcf_pts   = 0
+    mktcap    = e.get("market_cap") or 0
+    fcf_yield = (fcf / mktcap * 100) if mktcap > 0 and fcf > 0 else 0
+    fcf_cagr  = e.get("fcf_cagr") or 0
     if not no_dcf:
-        if fcf > 0:           fcf_pts += 5
-        if fcf_yield > 8:     fcf_pts += 8
-        elif fcf_yield > 5:   fcf_pts += 5
-        elif fcf_yield > 3:   fcf_pts += 2
-        if fcf_cagr > 10:     fcf_pts += 7
-        elif fcf_cagr > 5:    fcf_pts += 4
-        elif fcf_cagr > 0:    fcf_pts += 2
+        if fcf > 0:          fcf_pts += 5
+        if fcf_yield > 8:    fcf_pts += 8
+        elif fcf_yield > 5:  fcf_pts += 5
+        elif fcf_yield > 3:  fcf_pts += 2
+        if fcf_cagr > 10:    fcf_pts += 7
+        elif fcf_cagr > 5:   fcf_pts += 4
+        elif fcf_cagr > 0:   fcf_pts += 2
     details["FCF Quality"] = {"points": fcf_pts, "max": 20}
 
-    # 3. Valuation Multiples
     mult_pts = 0
     pe   = e.get("pe") or 0
     pb   = e.get("pb") or 0
@@ -207,61 +191,59 @@ def calculate_value_score_detail(e):
     roe  = e.get("roe") or 0
     roe  = roe * 100 if roe and abs(roe) < 2 else roe
     if "Financial" in sector:
-        if 0 < pb < 0.8:     mult_pts += 15
-        elif 0 < pb < 1.2:   mult_pts += 10
-        elif 0 < pb < 1.8:   mult_pts += 5
-        if roe > 15:          mult_pts += 10
-        elif roe > 10:        mult_pts += 6
-        elif roe > 7:         mult_pts += 3
+        if 0 < pb < 0.8:    mult_pts += 15
+        elif 0 < pb < 1.2:  mult_pts += 10
+        elif 0 < pb < 1.8:  mult_pts += 5
+        if roe > 15:        mult_pts += 10
+        elif roe > 10:      mult_pts += 6
+        elif roe > 7:       mult_pts += 3
     elif "Utilities" in sector or "Real Estate" in sector:
         div = e.get("dividend") or 0
         div = div * 100 if div and abs(div) < 1 else div
-        if 0 < pe < 15:      mult_pts += 12
-        elif 0 < pe < 20:    mult_pts += 7
-        elif 0 < pe < 25:    mult_pts += 3
-        if div > 4:           mult_pts += 13
-        elif div > 3:         mult_pts += 8
-        elif div > 2:         mult_pts += 4
+        if 0 < pe < 15:     mult_pts += 12
+        elif 0 < pe < 20:   mult_pts += 7
+        elif 0 < pe < 25:   mult_pts += 3
+        if div > 4:         mult_pts += 13
+        elif div > 3:       mult_pts += 8
+        elif div > 2:       mult_pts += 4
     elif "Energy" in sector:
-        if 0 < eveb < 5:     mult_pts += 15
-        elif 0 < eveb < 8:   mult_pts += 9
-        elif 0 < eveb < 12:  mult_pts += 4
-        if 0 < pe < 12:      mult_pts += 10
-        elif 0 < pe < 18:    mult_pts += 5
+        if 0 < eveb < 5:    mult_pts += 15
+        elif 0 < eveb < 8:  mult_pts += 9
+        elif 0 < eveb < 12: mult_pts += 4
+        if 0 < pe < 12:     mult_pts += 10
+        elif 0 < pe < 18:   mult_pts += 5
     else:
-        if 0 < pe < 12:      mult_pts += 9
-        elif 0 < pe < 18:    mult_pts += 5
-        elif 0 < pe < 25:    mult_pts += 2
-        if 0 < pb < 1.5:     mult_pts += 8
-        elif 0 < pb < 3:     mult_pts += 4
-        elif 0 < pb < 5:     mult_pts += 2
-        if 0 < eveb < 8:     mult_pts += 8
-        elif 0 < eveb < 12:  mult_pts += 4
+        if 0 < pe < 12:     mult_pts += 9
+        elif 0 < pe < 18:   mult_pts += 5
+        elif 0 < pe < 25:   mult_pts += 2
+        if 0 < pb < 1.5:    mult_pts += 8
+        elif 0 < pb < 3:    mult_pts += 4
+        elif 0 < pb < 5:    mult_pts += 2
+        if 0 < eveb < 8:    mult_pts += 8
+        elif 0 < eveb < 12: mult_pts += 4
     details["Valuation"] = {"points": mult_pts, "max": 25}
 
-    # 4. Profitability
     prof_pts = 0
     margin   = e.get("net_margin") or 0
     margin   = margin * 100 if margin and abs(margin) < 1 else margin
-    if roe > 20:      prof_pts += 8
-    elif roe > 12:    prof_pts += 5
-    elif roe > 8:     prof_pts += 2
-    if margin > 20:   prof_pts += 7
+    if roe > 20:     prof_pts += 8
+    elif roe > 12:   prof_pts += 5
+    elif roe > 8:    prof_pts += 2
+    if margin > 20:  prof_pts += 7
     elif margin > 10: prof_pts += 4
-    elif margin > 5:  prof_pts += 2
+    elif margin > 5: prof_pts += 2
     details["Profitability"] = {"points": prof_pts, "max": 15}
 
-    # 5. Financial Stability
     stab_pts = 0
     net_debt_ratio = (e.get("net_debt") or 0) / mktcap if mktcap > 0 else 0
     div = e.get("dividend") or 0
     div = div * 100 if div and abs(div) < 1 else div
     thresholds = (1.5, 3.0, 5.0) if no_dcf else (0.3, 0.8, 1.5)
-    if net_debt_ratio < thresholds[0]:    stab_pts += 8
-    elif net_debt_ratio < thresholds[1]:  stab_pts += 5
-    elif net_debt_ratio < thresholds[2]:  stab_pts += 2
-    if div > 0:  stab_pts += 4
-    if div > 3:  stab_pts += 3
+    if net_debt_ratio < thresholds[0]:   stab_pts += 8
+    elif net_debt_ratio < thresholds[1]: stab_pts += 5
+    elif net_debt_ratio < thresholds[2]: stab_pts += 2
+    if div > 0: stab_pts += 4
+    if div > 3: stab_pts += 3
     details["Stability"] = {"points": stab_pts, "max": 15}
 
     total = sum(d["points"] for d in details.values())
@@ -270,9 +252,9 @@ def calculate_value_score_detail(e):
 
 def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
     try:
-        ticker   = yf.Ticker(symbol)
-        info     = ticker.info
-        cashflow = ticker.cashflow
+        ticker     = yf.Ticker(symbol)
+        info       = ticker.info
+        cashflow   = ticker.cashflow
         financials = ticker.financials
     except Exception as ex:
         return None, str(ex)
@@ -288,10 +270,10 @@ def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
     if not shares:
         return None, "Shares outstanding not available"
 
-    debt          = float(info.get("totalDebt") or 0)
-    cash          = float(info.get("totalCash") or 0)
-    net_debt      = debt - cash
-    mktcap        = float(info.get("marketCap") or 0)
+    debt     = float(info.get("totalDebt") or 0)
+    cash     = float(info.get("totalCash") or 0)
+    net_debt = debt - cash
+    mktcap   = float(info.get("marketCap") or 0)
 
     wacc_calc, beta, cost_eq, cost_debt, eq_w, debt_w = calculate_wacc(info)
     wacc = wacc_override if wacc_override else wacc_calc
@@ -299,22 +281,22 @@ def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
     if wacc <= terminal:
         return None, "WACC must be greater than terminal growth rate"
 
-    discounted = []
-    projected  = []
+    discounted  = []
+    projected   = []
     current_fcf = fcf
     for yr in range(1, 11):
         current_fcf *= (1 + growth)
         projected.append(round(current_fcf / 1e9, 2))
         discounted.append(current_fcf / (1 + wacc) ** yr)
 
-    tv          = current_fcf * (1 + terminal) / (wacc - terminal)
-    tv_disc     = tv / (1 + wacc) ** 10
-    enterprise  = sum(discounted) + tv_disc
-    equity      = enterprise - net_debt
-    intrinsic   = equity / shares
+    tv         = current_fcf * (1 + terminal) / (wacc - terminal)
+    tv_disc    = tv / (1 + wacc) ** 10
+    enterprise = sum(discounted) + tv_disc
+    equity     = enterprise - net_debt
+    intrinsic  = equity / shares
     with_margin = intrinsic * (1 - margin_of_safety)
-    price       = float(info.get("currentPrice") or 0)
-    deviation   = (price - intrinsic) / intrinsic * 100 if intrinsic != 0 else 0
+    price      = float(info.get("currentPrice") or 0)
+    deviation  = (price - intrinsic) / intrinsic * 100 if intrinsic != 0 else 0
 
     fcf_cagr = None
     if len(fcf_history) >= 2 and fcf_history[-1] > 0 and fcf_history[0] > 0:
@@ -330,46 +312,46 @@ def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
         pass
 
     result = {
-        "name":              info.get("longName", symbol),
-        "symbol":            symbol,
-        "sector":            info.get("sector", "N/A"),
-        "price":             round(price, 2),
-        "intrinsic":         round(intrinsic, 2),
-        "with_margin":       round(with_margin, 2),
-        "deviation":         round(deviation, 1),
-        "wacc":              round(wacc * 100, 2),
-        "wacc_calculated":   round(wacc_calc * 100, 2),
-        "beta":              round(beta, 2),
-        "cost_equity":       round(cost_eq * 100, 2),
-        "cost_debt":         round(cost_debt * 100, 2),
-        "equity_weight":     round(eq_w * 100, 1),
-        "debt_weight":       round(debt_w * 100, 1),
-        "fcf_note":          fcf_note,
-        "fcf":               round(fcf / 1e9, 2),
-        "fcf_history":       fcf_history,
-        "fcf_years":         [str(y)[:10] for y in fcf_years],
-        "fcf_cagr":          round(fcf_cagr, 1) if fcf_cagr else None,
-        "projected_fcfs":    projected,
-        "terminal_value":    round(tv_disc / 1e9, 2),
-        "sum_discounted":    round(sum(discounted) / 1e9, 2),
-        "net_debt":          round(net_debt / 1e9, 2),
-        "market_cap":        round(mktcap / 1e9, 2),
-        "shares":            round(shares / 1e9, 3),
-        "total_debt":        round(debt / 1e9, 2),
-        "cash":              round(cash / 1e9, 2),
-        "pe":                info.get("trailingPE"),
-        "forward_pe":        info.get("forwardPE"),
-        "pb":                info.get("priceToBook"),
-        "ev_ebitda":         info.get("enterpriseToEbitda"),
-        "ps":                info.get("priceToSalesTrailing12Months"),
-        "roe":               info.get("returnOnEquity"),
-        "net_margin":        info.get("profitMargins"),
-        "dividend":          info.get("dividendYield"),
-        "revenue_growth":    round(rev_growth, 1) if rev_growth else None,
-        "growth_assumption": round(growth * 100, 1),
+        "name":               info.get("longName", symbol),
+        "symbol":             symbol,
+        "sector":             info.get("sector", "N/A"),
+        "price":              round(price, 2),
+        "intrinsic":          round(intrinsic, 2),
+        "with_margin":        round(with_margin, 2),
+        "deviation":          round(deviation, 1),
+        "wacc":               round(wacc * 100, 2),
+        "wacc_calculated":    round(wacc_calc * 100, 2),
+        "beta":               round(beta, 2),
+        "cost_equity":        round(cost_eq * 100, 2),
+        "cost_debt":          round(cost_debt * 100, 2),
+        "equity_weight":      round(eq_w * 100, 1),
+        "debt_weight":        round(debt_w * 100, 1),
+        "fcf_note":           fcf_note,
+        "fcf":                round(fcf / 1e9, 2),
+        "fcf_history":        fcf_history,
+        "fcf_years":          [str(y)[:10] for y in fcf_years],
+        "fcf_cagr":           round(fcf_cagr, 1) if fcf_cagr else None,
+        "projected_fcfs":     projected,
+        "terminal_value":     round(tv_disc / 1e9, 2),
+        "sum_discounted":     round(sum(discounted) / 1e9, 2),
+        "net_debt":           round(net_debt / 1e9, 2),
+        "market_cap":         round(mktcap / 1e9, 2),
+        "shares":             round(shares / 1e9, 3),
+        "total_debt":         round(debt / 1e9, 2),
+        "cash":               round(cash / 1e9, 2),
+        "pe":                 info.get("trailingPE"),
+        "forward_pe":         info.get("forwardPE"),
+        "pb":                 info.get("priceToBook"),
+        "ev_ebitda":          info.get("enterpriseToEbitda"),
+        "ps":                 info.get("priceToSalesTrailing12Months"),
+        "roe":                info.get("returnOnEquity"),
+        "net_margin":         info.get("profitMargins"),
+        "dividend":           info.get("dividendYield"),
+        "revenue_growth":     round(rev_growth, 1) if rev_growth else None,
+        "growth_assumption":  round(growth * 100, 1),
         "terminal_assumption": round(terminal * 100, 1),
-        "mos_assumption":    round(margin_of_safety * 100, 0),
-        "last_updated":      datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "mos_assumption":     round(margin_of_safety * 100, 0),
+        "last_updated":       datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
     score, details = calculate_value_score_detail(result)
     result["value_score"]         = score
@@ -404,7 +386,7 @@ def result_to_db_entry(r):
         "Net Debt (Bn)":    r.get("net_debt"),
         "Market Cap (Bn)":  r.get("market_cap"),
         "FCF Note":         r["fcf_note"],
-        "Last Updated":     r.get("last_updated",""),
+        "Last Updated":     r.get("last_updated", ""),
     }
 
 
@@ -423,8 +405,8 @@ def save_to_database(result):
 
 def search_stock(query):
     try:
-        res     = yf.Search(query, max_results=6)
-        hits    = res.quotes
+        res  = yf.Search(query, max_results=6)
+        hits = res.quotes
         if hits:
             names   = [f"{h.get('shortname', h.get('longname','?'))} – {h.get('symbol','?')}" for h in hits]
             symbols = [h.get("symbol","") for h in hits]
@@ -445,10 +427,8 @@ def score_color(points, maximum):
 def show_value_score(result):
     score   = result.get("value_score", 0)
     details = result.get("value_score_details", {})
-
-    color = "green" if score >= 60 else "orange" if score >= 40 else "red"
+    color   = "green" if score >= 60 else "orange" if score >= 40 else "red"
     st.markdown(f"### Value Score: :{color}[{score}/100]")
-
     if details:
         cols = st.columns(len(details))
         for i, (name, vals) in enumerate(details.items()):
@@ -460,7 +440,6 @@ def show_value_score(result):
                 value=f"{p}/{m}",
                 delta=f"{round(p/m*100):.0f}%" if m > 0 else "N/A"
             )
-
         fig = go.Figure(go.Bar(
             x=list(details.keys()),
             y=[d["points"] for d in details.values()],
@@ -482,6 +461,7 @@ def show_value_score(result):
         )
         st.plotly_chart(fig, use_container_width=True)
 
+
 # ================================================================
 # SIDEBAR
 # ================================================================
@@ -491,17 +471,6 @@ page = st.sidebar.radio(
     ["🏠 Dashboard", "🔍 Analysis", "📊 Database",
      "💼 Portfolio", "🔄 Batch Analysis", "📖 Methodology"]
 )
-st.sidebar.divider()
-st.sidebar.caption(f"Database: {len(st.session_state.database)} stocks")
-st.sidebar.caption(f"Portfolio: {len(st.session_state.portfolio)} positions")
-if st.sidebar.button("🔄 Reload Data"):
-    st.session_state.database, st.session_state.db_sha   = load_database()
-    st.session_state.portfolio, st.session_state.port_sha = load_portfolio()
-    st.rerun()
-
-
-
-
 st.sidebar.divider()
 st.sidebar.caption(f"Database: {len(st.session_state.database)} stocks")
 st.sidebar.caption(f"Portfolio: {len(st.session_state.portfolio)} positions")
@@ -565,7 +534,8 @@ if page == "🏠 Dashboard":
                 fig2 = px.histogram(
                     df, x="Deviation %",
                     title="Distribution of Valuations",
-                    nbins=30, color_discrete_sequence=["#378ADD"]
+                    nbins=30,
+                    color_discrete_sequence=["#378ADD"]
                 )
                 fig2.add_vline(x=0, line_dash="dash", line_color="gray")
                 fig2.update_layout(height=300)
@@ -586,14 +556,14 @@ elif page == "🔍 Analysis":
         )
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
-        search_btn = st.button("Search", use_container_width=True)
+        search_btn = st.button("Search", use_container_width=True, key="search_btn")
 
     if (search_btn or query) and query:
         if search_btn or st.session_state.get("last_query") != query:
             names, symbols = search_stock(query)
-            st.session_state.search_names  = names
+            st.session_state.search_names   = names
             st.session_state.search_symbols = symbols
-            st.session_state.last_query    = query
+            st.session_state.last_query     = query
 
     selected_symbol = ""
     if st.session_state.search_symbols:
@@ -622,7 +592,7 @@ elif page == "🔍 Analysis":
     if wacc_mode == "Manual":
         wacc_override = st.slider("WACC manual %", 1, 20, 8) / 100
 
-    if st.button("Analyze", type="primary", use_container_width=True):
+    if st.button("Analyze", type="primary", use_container_width=True, key="analyze_btn"):
         if selected_symbol:
             with st.spinner(f"Loading data for {selected_symbol}..."):
                 result, error = run_dcf(
@@ -642,9 +612,9 @@ elif page == "🔍 Analysis":
         st.caption(f"Sector: {r['sector']}  ·  Last updated: {r.get('last_updated','')}")
 
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Current Price",     f"${r['price']:.2f}")
-        col2.metric("Intrinsic Value",   f"${r['intrinsic']:.2f}")
-        col3.metric("With MoS",          f"${r['with_margin']:.2f}")
+        col1.metric("Current Price",   f"${r['price']:.2f}")
+        col2.metric("Intrinsic Value", f"${r['intrinsic']:.2f}")
+        col3.metric("With MoS",        f"${r['with_margin']:.2f}")
         dev = r["deviation"]
         col4.metric("Valuation", f"{dev:+.1f}%",
                     delta="Overvalued" if dev > 0 else "Undervalued",
@@ -654,10 +624,10 @@ elif page == "🔍 Analysis":
         show_value_score(r)
         st.divider()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 Key Metrics", "💰 FCF & Cashflows",
-    "🔢 DCF Calculation", "⚙️ WACC", "📈 Historical Charts"
-])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "📊 Key Metrics", "💰 FCF & Cashflows",
+            "🔢 DCF Calculation", "⚙️ WACC", "📈 Historical Charts"
+        ])
 
         with tab1:
             col1, col2, col3 = st.columns(3)
@@ -743,7 +713,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
                 st.dataframe(assumptions_df, hide_index=True, use_container_width=True)
             with col2:
                 st.markdown("**Step-by-Step Calculation**")
-                total = r['sum_discounted'] + r['terminal_value']
+                total      = r['sum_discounted'] + r['terminal_value']
                 equity_val = total - r['net_debt']
                 calc_df = pd.DataFrame({
                     "Step": [
@@ -786,7 +756,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
             fig3.update_layout(showlegend=False, height=300)
             st.plotly_chart(fig3, use_container_width=True)
 
-with tab4:
+        with tab4:
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("**Cost of Equity (CAPM)**")
@@ -805,17 +775,18 @@ with tab4:
         with tab5:
             st.markdown("**Historical Analysis – 10 Years**")
             period_map = {
-                "1 Year": "1y",
+                "1 Year":  "1y",
                 "3 Years": "3y",
                 "5 Years": "5y",
-                "10 Years": "10y",
-                "Max": "max"
+                "10 Years":"10y",
+                "Max":     "max"
             }
             selected_period = st.radio(
                 "Time period",
                 list(period_map.keys()),
                 index=3,
-                horizontal=True
+                horizontal=True,
+                key="hist_period"
             )
             period = period_map[selected_period]
 
@@ -823,9 +794,8 @@ with tab4:
                 try:
                     ticker     = yf.Ticker(r["symbol"])
                     hist       = ticker.history(period=period)
-                    info       = ticker.info
-                    cashflow   = ticker.cashflow
-                    financials = ticker.financials
+                    info_hist  = ticker.info
+                    cashflow_h = ticker.cashflow
 
                     if hist.empty:
                         st.warning("No historical data available.")
@@ -834,28 +804,28 @@ with tab4:
 
                         # Chart 1: Price History
                         st.subheader("📉 Price History")
-                        fig1 = px.line(
+                        fig_h1 = px.line(
                             hist, x=hist.index, y="Close",
-                            title=f"{r['name']} – Price (10 Years)",
+                            title=f"{r['name']} – Price History",
                             labels={"Close": "Price ($)", "index": "Date"},
                             color_discrete_sequence=["#378ADD"]
                         )
-                        fig1.add_hline(
+                        fig_h1.add_hline(
                             y=r["intrinsic"],
                             line_dash="dash",
                             line_color="#1D9E75",
                             annotation_text=f"Intrinsic Value ${r['intrinsic']:.2f}",
                             annotation_position="top left"
                         )
-                        fig1.add_hline(
+                        fig_h1.add_hline(
                             y=r["with_margin"],
                             line_dash="dot",
                             line_color="#EF9F27",
                             annotation_text=f"With MoS ${r['with_margin']:.2f}",
                             annotation_position="bottom left"
                         )
-                        fig1.update_layout(height=400)
-                        st.plotly_chart(fig1, use_container_width=True)
+                        fig_h1.update_layout(height=400)
+                        st.plotly_chart(fig_h1, use_container_width=True)
                         st.caption("Green dashed = intrinsic value · Orange dotted = max buy price with margin of safety")
 
                         st.divider()
@@ -863,37 +833,37 @@ with tab4:
                         # Chart 2: P/E History
                         st.subheader("📊 P/E Ratio History")
                         try:
-                            eps_trail = info.get("trailingEps")
+                            eps_trail  = info_hist.get("trailingEps")
+                            current_pe = r.get("pe") or 0
                             if eps_trail and eps_trail > 0:
                                 hist["PE"] = hist["Close"] / eps_trail
-                                current_pe = r.get("pe") or 0
-                                fig2 = px.line(
+                                fig_h2 = px.line(
                                     hist, x=hist.index, y="PE",
                                     title=f"{r['name']} – Estimated P/E Ratio",
                                     labels={"PE": "P/E Ratio", "index": "Date"},
                                     color_discrete_sequence=["#7F77DD"]
                                 )
                                 avg_pe = hist["PE"].mean()
-                                fig2.add_hline(
+                                fig_h2.add_hline(
                                     y=avg_pe,
                                     line_dash="dash",
                                     line_color="gray",
-                                    annotation_text=f"10Y Avg P/E: {avg_pe:.1f}",
+                                    annotation_text=f"Avg P/E: {avg_pe:.1f}",
                                     annotation_position="top left"
                                 )
                                 if current_pe > 0:
-                                    fig2.add_hline(
+                                    fig_h2.add_hline(
                                         y=current_pe,
                                         line_dash="dot",
                                         line_color="#E24B4A",
                                         annotation_text=f"Current P/E: {current_pe:.1f}",
                                         annotation_position="bottom right"
                                     )
-                                fig2.update_layout(height=350)
-                                st.plotly_chart(fig2, use_container_width=True)
+                                fig_h2.update_layout(height=350)
+                                st.plotly_chart(fig_h2, use_container_width=True)
                                 col1, col2, col3 = st.columns(3)
                                 col1.metric("Current P/E", f"{current_pe:.1f}" if current_pe else "N/A")
-                                col2.metric("10Y Avg P/E", f"{avg_pe:.1f}")
+                                col2.metric("Avg P/E",     f"{avg_pe:.1f}")
                                 col3.metric(
                                     "vs. Average",
                                     f"{((current_pe/avg_pe)-1)*100:+.1f}%" if current_pe and avg_pe else "N/A",
@@ -901,13 +871,13 @@ with tab4:
                                 )
                                 if current_pe and avg_pe:
                                     if current_pe < avg_pe * 0.8:
-                                        st.success("✅ P/E significantly below 10Y average – historically cheap")
+                                        st.success("✅ P/E significantly below average – historically cheap")
                                     elif current_pe < avg_pe:
-                                        st.info("🟡 P/E below 10Y average – moderately attractive")
+                                        st.info("🟡 P/E below average – moderately attractive")
                                     elif current_pe < avg_pe * 1.2:
-                                        st.warning("🟠 P/E above 10Y average – slightly expensive")
+                                        st.warning("🟠 P/E above average – slightly expensive")
                                     else:
-                                        st.error("🔴 P/E significantly above 10Y average – historically expensive")
+                                        st.error("🔴 P/E significantly above average – historically expensive")
                             else:
                                 st.info("P/E history not available – EPS data missing.")
                         except Exception as pe_err:
@@ -918,36 +888,36 @@ with tab4:
                         # Chart 3: FCF Development
                         st.subheader("💰 FCF Development")
                         try:
-                            if "Free Cash Flow" in cashflow.index:
-                                fcf_series = cashflow.loc["Free Cash Flow"]
-                                fcf_df     = pd.DataFrame({
+                            if "Free Cash Flow" in cashflow_h.index:
+                                fcf_series = cashflow_h.loc["Free Cash Flow"]
+                                fcf_hist_df = pd.DataFrame({
                                     "Year":     [str(d)[:4] for d in fcf_series.index],
                                     "FCF ($B)": [round(v/1e9, 2) for v in fcf_series.values]
                                 }).sort_values("Year")
                                 colors = ["#1D9E75" if v >= 0 else "#E24B4A"
-                                          for v in fcf_df["FCF ($B)"]]
-                                fig3 = go.Figure(go.Bar(
-                                    x=fcf_df["Year"],
-                                    y=fcf_df["FCF ($B)"],
+                                          for v in fcf_hist_df["FCF ($B)"]]
+                                fig_h3 = go.Figure(go.Bar(
+                                    x=fcf_hist_df["Year"],
+                                    y=fcf_hist_df["FCF ($B)"],
                                     marker_color=colors,
-                                    text=[f"${v:.2f}B" for v in fcf_df["FCF ($B)"]],
+                                    text=[f"${v:.2f}B" for v in fcf_hist_df["FCF ($B)"]],
                                     textposition="auto"
                                 ))
-                                fig3.update_layout(
+                                fig_h3.update_layout(
                                     title=f"{r['name']} – Free Cash Flow History",
                                     yaxis_title="FCF ($B)",
                                     height=350,
                                     showlegend=False
                                 )
-                                fig3.add_hline(y=0, line_color="gray", line_width=0.5)
-                                st.plotly_chart(fig3, use_container_width=True)
-                                pos_fcfs = [v for v in fcf_df["FCF ($B)"] if v > 0]
+                                fig_h3.add_hline(y=0, line_color="gray", line_width=0.5)
+                                st.plotly_chart(fig_h3, use_container_width=True)
+                                pos_fcfs = [v for v in fcf_hist_df["FCF ($B)"] if v > 0]
                                 if len(pos_fcfs) >= 2:
                                     fcf_trend = ((pos_fcfs[-1]/pos_fcfs[0]) ** (1/(len(pos_fcfs)-1)) - 1) * 100
                                     col1, col2, col3 = st.columns(3)
-                                    col1.metric("Latest FCF",     f"${fcf_df['FCF ($B)'].iloc[-1]:.2f}B")
+                                    col1.metric("Latest FCF",     f"${fcf_hist_df['FCF ($B)'].iloc[-1]:.2f}B")
                                     col2.metric("FCF CAGR",       f"{fcf_trend:+.1f}%")
-                                    col3.metric("Positive Years", f"{len(pos_fcfs)}/{len(fcf_df)}")
+                                    col3.metric("Positive Years", f"{len(pos_fcfs)}/{len(fcf_hist_df)}")
                             else:
                                 st.info("FCF history not available.")
                         except Exception as fcf_err:
@@ -958,43 +928,42 @@ with tab4:
                         # Chart 4: Intrinsic Value vs Price
                         st.subheader("🎯 Intrinsic Value vs. Price")
                         try:
-                            hist_annual        = hist["Close"].resample("YE").last().reset_index()
+                            hist_annual         = hist["Close"].resample("YE").last().reset_index()
                             hist_annual.columns = ["Date", "Price"]
-                            current_iv         = r["intrinsic"]
-                            growth_rate        = r["growth_assumption"] / 100
-                            years_back         = len(hist_annual)
-                            iv_estimates       = []
+                            current_iv          = r["intrinsic"]
+                            growth_rate         = r["growth_assumption"] / 100
+                            years_back          = len(hist_annual)
+                            iv_estimates        = []
                             for i in range(years_back, 0, -1):
-                                iv_est = current_iv / ((1 + growth_rate) ** i)
-                                iv_estimates.append(iv_est)
+                                iv_estimates.append(current_iv / ((1 + growth_rate) ** i))
                             hist_annual["Intrinsic Value"] = iv_estimates[:len(hist_annual)]
-                            fig4 = go.Figure()
-                            fig4.add_trace(go.Scatter(
+                            fig_h4 = go.Figure()
+                            fig_h4.add_trace(go.Scatter(
                                 x=hist_annual["Date"],
                                 y=hist_annual["Price"],
                                 name="Market Price",
                                 line=dict(color="#378ADD", width=2)
                             ))
-                            fig4.add_trace(go.Scatter(
+                            fig_h4.add_trace(go.Scatter(
                                 x=hist_annual["Date"],
                                 y=hist_annual["Intrinsic Value"],
                                 name="Est. Intrinsic Value",
                                 line=dict(color="#1D9E75", width=2, dash="dash")
                             ))
-                            fig4.add_trace(go.Scatter(
+                            fig_h4.add_trace(go.Scatter(
                                 x=hist_annual["Date"],
                                 y=[v * (1 - r["mos_assumption"]/100)
                                    for v in hist_annual["Intrinsic Value"]],
                                 name="With Margin of Safety",
                                 line=dict(color="#EF9F27", width=1.5, dash="dot")
                             ))
-                            fig4.update_layout(
+                            fig_h4.update_layout(
                                 title=f"{r['name']} – Price vs. Estimated Intrinsic Value",
                                 yaxis_title="Price ($)",
                                 height=400,
                                 legend=dict(orientation="h", y=-0.2)
                             )
-                            st.plotly_chart(fig4, use_container_width=True)
+                            st.plotly_chart(fig_h4, use_container_width=True)
                             st.caption("⚠️ Intrinsic value estimated backwards from current calculation. Use as orientation only.")
                         except Exception as iv_err:
                             st.info(f"Intrinsic value chart not available: {iv_err}")
@@ -1003,7 +972,7 @@ with tab4:
                     st.error(f"Error loading historical data: {ex}")
 
         st.divider()
-        if st.button("💾 Save to Database", type="primary"):
+        if st.button("💾 Save to Database", type="primary", key="save_btn"):
             with st.spinner("Saving..."):
                 ok = save_to_database(r)
             if ok:
@@ -1017,9 +986,9 @@ with tab4:
 elif page == "📊 Database":
     st.title("Database")
 
-    col1, col2 = st.columns([4,1])
+    col1, col2 = st.columns([4, 1])
     with col2:
-        if st.button("🔄 Refresh"):
+        if st.button("🔄 Refresh", key="db_refresh"):
             st.session_state.database, st.session_state.db_sha = load_database()
             st.rerun()
 
@@ -1030,7 +999,7 @@ elif page == "📊 Database":
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            sectors      = ["All"] + sorted(df["Sector"].dropna().unique().tolist())
+            sectors       = ["All"] + sorted(df["Sector"].dropna().unique().tolist())
             sector_filter = st.selectbox("Sector", sectors)
         with col2:
             dev_range = st.slider("Deviation % filter", -300, 500, (-300, 500))
@@ -1053,7 +1022,7 @@ elif page == "📊 Database":
             filtered.style
             .background_gradient(subset=["Value Score"], cmap="RdYlGn")
             .background_gradient(subset=["Deviation %"], cmap="RdYlGn_r")
-            .format({"Deviation %": "{:+.1f}%","Price": "${:.2f}",
+            .format({"Deviation %": "{:+.1f}%", "Price": "${:.2f}",
                      "Intrinsic Value": "${:.2f}"}, na_rep="N/A"),
             use_container_width=True,
             hide_index=True
@@ -1090,12 +1059,12 @@ elif page == "💼 Portfolio":
     with st.expander("➕ Add Position", expanded=not bool(st.session_state.portfolio)):
         col1, col2, col3 = st.columns(3)
         with col1:
-            p_query    = st.text_input("Search", placeholder="Apple, AAPL...")
-            p_search   = st.button("Search", key="p_search_btn")
+            p_query  = st.text_input("Search", placeholder="Apple, AAPL...")
+            p_search = st.button("Search", key="p_search_btn")
         with col2:
-            p_cost     = st.number_input("Purchase Price ($)", min_value=0.0, step=0.01)
+            p_cost   = st.number_input("Purchase Price ($)", min_value=0.0, step=0.01)
         with col3:
-            p_shares   = st.number_input("Number of Shares", min_value=0.0, step=1.0)
+            p_shares = st.number_input("Number of Shares", min_value=0.0, step=1.0)
 
         if p_search and p_query:
             names, symbols = search_stock(p_query)
@@ -1171,10 +1140,10 @@ elif page == "💼 Portfolio":
         total_perf   = (total_value - total_invest) / total_invest * 100
 
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Positions",      len(df_p))
-        col2.metric("Invested",       f"${total_invest:,.2f}")
-        col3.metric("Current Value",  f"${total_value:,.2f}")
-        col4.metric("Performance",    f"{total_perf:+.1f}%")
+        col1.metric("Positions",     len(df_p))
+        col2.metric("Invested",      f"${total_invest:,.2f}")
+        col3.metric("Current Value", f"${total_value:,.2f}")
+        col4.metric("Performance",   f"{total_perf:+.1f}%")
 
         st.divider()
         st.dataframe(df_p, use_container_width=True, hide_index=True)
@@ -1206,21 +1175,21 @@ elif page == "🔄 Batch Analysis":
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        b_growth = st.slider("FCF Growth %", 0, 15, 6) / 100
+        b_growth   = st.slider("FCF Growth %", 0, 15, 6) / 100
     with col2:
         b_terminal = st.slider("Terminal Growth %", 1, 5, 3) / 100
     with col3:
-        b_mos = st.slider("Margin of Safety %", 0, 40, 25) / 100
+        b_mos      = st.slider("Margin of Safety %", 0, 40, 25) / 100
 
     count = st.slider("How many stocks?", 10, len(VALUE_UNIVERSE), 50)
     st.caption(f"{count} stocks · approx. {count//10}–{count//6} minutes")
 
-    if st.button("Start Batch Analysis", type="primary"):
-        selection  = VALUE_UNIVERSE[:count]
-        progress   = st.progress(0)
-        status     = st.empty()
-        errors     = []
-        successes  = 0
+    if st.button("Start Batch Analysis", type="primary", key="batch_btn"):
+        selection = VALUE_UNIVERSE[:count]
+        progress  = st.progress(0)
+        status    = st.empty()
+        errors    = []
+        successes = 0
 
         for i, symbol in enumerate(selection):
             status.text(f"[{i+1}/{len(selection)}] Analyzing {symbol}...")
@@ -1263,7 +1232,6 @@ elif page == "🔄 Batch Analysis":
 # ================================================================
 elif page == "📖 Methodology":
     st.title("Methodology & Sources")
-
     st.markdown("""
     ## What this tool calculates – and what it does not
 
