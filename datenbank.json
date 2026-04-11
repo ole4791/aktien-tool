@@ -1,0 +1,30 @@
+[
+  {
+    "Symbol": "AAPL",
+    "Name": "Apple Inc.",
+    "Sector": "Technology",
+    "Price": 260.48,
+    "Intrinsic Value": 148.35,
+    "With MoS": 111.26,
+    "Deviation %": 75.6,
+    "Value Score": 35,
+    "WACC %": 9.94,
+    "FCF Growth %": 8.0,
+    "Terminal %": 3.0,
+    "MoS %": 25.0,
+    "P/E": 33.013943,
+    "Forward P/E": 27.971819,
+    "P/B": 43.42781,
+    "EV/EBITDA": 25.165,
+    "FCF (Bn)": 102.39,
+    "FCF CAGR %": null,
+    "ROE %": 152.0,
+    "Net Margin %": 27.0,
+    "Dividend %": 40.0,
+    "Revenue Growth %": null,
+    "Net Debt (Bn)": 23.6,
+    "Market Cap (Bn)": 3828.52,
+    "FCF Note": "✅ 3-year average",
+    "Last Updated": "2026-04-11 23:15"
+  }
+]
