@@ -660,6 +660,7 @@ elif page == "🔍 Analysis":
                 st.write(f"Net Margin: {r['net_margin']*100:.1f}%" if r.get('net_margin') else "Net Margin: N/A")
                 st.write(f"Revenue Growth: {r['revenue_growth']:.1f}%" if r.get('revenue_growth') else "Revenue Growth: N/A")
                 st.write(f"Dividend Yield: {normalize_dividend(r['dividend']):.2f}%" if r.get('dividend') is not None else "Dividend: none")
+                st.caption(f"(Debug: raw={r.get('dividend')}, normalized={normalize_dividend(r.get('dividend')) if r.get('dividend') else 0})")
             with col3:
                 st.markdown("**Balance Sheet**")
                 st.write(f"Market Cap: ${r['market_cap']:.1f}B")
