@@ -334,7 +334,7 @@ def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
         "sum_discounted":     round(sum(discounted) / 1e9, 2),
         "net_debt":           round(net_debt / 1e9, 2),
         "market_cap":         round(mktcap / 1e9, 2),
-        "shares":             round(shares / 1e9, 3),
+        "shares":             round(shares / 1e9, 2),
         "total_debt":         round(debt / 1e9, 2),
         "cash":               round(cash / 1e9, 2),
         "pe":                 info.get("trailingPE"),
@@ -371,10 +371,10 @@ def result_to_db_entry(r):
         "FCF Growth %":     r["growth_assumption"],
         "Terminal %":       r["terminal_assumption"],
         "MoS %":            r["mos_assumption"],
-        "P/E":              r.get("pe"),
-        "Forward P/E":      r.get("forward_pe"),
-        "P/B":              r.get("pb"),
-        "EV/EBITDA":        r.get("ev_ebitda"),
+        "P/E":              round(r["pe"], 2) if r.get("pe") else None,
+        "Forward P/E":      round(r["forward_pe"], 2) if r.get("forward_pe") else None,
+        "P/B":              round(r["pb"], 2) if r.get("pb") else None,
+        "EV/EBITDA":        round(r["ev_ebitda"], 2) if r.get("ev_ebitda") else None,
         "FCF (Bn)":         r["fcf"],
         "FCF CAGR %":       r.get("fcf_cagr"),
         "ROE %":            round(r["roe"]*100,2) if r.get("roe") else None,
@@ -511,7 +511,8 @@ if page == "🏠 Dashboard":
             .background_gradient(subset=["Value Score"], cmap="RdYlGn")
             .background_gradient(subset=["Deviation %"], cmap="RdYlGn_r")
             .format({"Deviation %": "{:+.1f}%", "Price": "${:.2f}",
-                     "Intrinsic Value": "${:.2f}", "Dividend %": "{:.2f}%"}, na_rep="N/A"),
+                     "Intrinsic Value": "${:.2f}", "Dividend %": "{:.2f}%",
+                     "P/E": "{:.2f}", "FCF CAGR %": "{:.2f}"}, na_rep="N/A"),
             use_container_width=True,
             hide_index=True
         )
@@ -648,7 +649,7 @@ elif page == "🔍 Analysis":
                 st.write(f"Total Debt: ${r['total_debt']:.2f}B")
                 st.write(f"Cash: ${r['cash']:.2f}B")
                 st.write(f"Net Debt: ${r['net_debt']:.2f}B")
-                st.write(f"Shares Outstanding: {r['shares']:.3f}B")
+                st.write(f"Shares Outstanding: {r['shares']:.2f}B")
 
         with tab2:
             col1, col2 = st.columns(2)
@@ -1021,7 +1022,11 @@ elif page == "📊 Database":
             .background_gradient(subset=["Value Score"], cmap="RdYlGn")
             .background_gradient(subset=["Deviation %"], cmap="RdYlGn_r")
             .format({"Deviation %": "{:+.1f}%", "Price": "${:.2f}",
-                     "Intrinsic Value": "${:.2f}", "Dividend %": "{:.2f}%"}, na_rep="N/A"),
+                     "Intrinsic Value": "${:.2f}", "With MoS": "${:.2f}",
+                     "Dividend %": "{:.2f}%", "P/E": "{:.2f}",
+                     "Forward P/E": "{:.2f}", "P/B": "{:.2f}",
+                     "EV/EBITDA": "{:.2f}", "FCF CAGR %": "{:.2f}",
+                     "ROE %": "{:.2f}", "Net Margin %": "{:.2f}"}, na_rep="N/A"),
             use_container_width=True,
             hide_index=True
         )
