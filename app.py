@@ -123,11 +123,18 @@ VALUE_UNIVERSE = [
 # HELPER FUNCTIONS
 # ================================================================
 def normalize_dividend(div):
-    """Convert dividend to percentage format (0-100 range). If > 20, divide by 100."""
+    """Normalize dividend to percentage format (0-100 range).
+    Handles: decimal (0.03), percentage (3), or double-multiplied (300).
+    """
     if div is None or div == 0:
         return div
-    if div > 20:  # Safety check: if already multiplied twice
-        div = div / 100
+    # If very small (decimal like 0.03), convert to percentage
+    if 0 < div < 1:
+        return div * 100
+    # If suspiciously large (300+), divide by 100 (double-multiplied)
+    if div > 100:
+        return div / 100
+    # Otherwise (1-100), assume already in percentage format
     return div
 
 
@@ -390,7 +397,7 @@ def result_to_db_entry(r):
         "FCF CAGR %":       r.get("fcf_cagr"),
         "ROE %":            round(r["roe"]*100,1) if r.get("roe") else None,
         "Net Margin %":     round(r["net_margin"]*100,1) if r.get("net_margin") else None,
-        "Dividend %":       round(normalize_dividend(r["dividend"])*100,2) if r.get("dividend") is not None else None,
+        "Dividend %":       round(normalize_dividend(r["dividend"]),2) if r.get("dividend") is not None else None,
         "Revenue Growth %": r.get("revenue_growth"),
         "Net Debt (Bn)":    r.get("net_debt"),
         "Market Cap (Bn)":  r.get("market_cap"),
@@ -652,7 +659,7 @@ elif page == "🔍 Analysis":
                 st.write(f"ROE: {r['roe']*100:.1f}%" if r.get('roe') else "ROE: N/A")
                 st.write(f"Net Margin: {r['net_margin']*100:.1f}%" if r.get('net_margin') else "Net Margin: N/A")
                 st.write(f"Revenue Growth: {r['revenue_growth']:.1f}%" if r.get('revenue_growth') else "Revenue Growth: N/A")
-                st.write(f"Dividend Yield: {normalize_dividend(r['dividend'])*100:.2f}%" if r.get('dividend') is not None else "Dividend: none")
+                st.write(f"Dividend Yield: {normalize_dividend(r['dividend']):.2f}%" if r.get('dividend') is not None else "Dividend: none")
             with col3:
                 st.markdown("**Balance Sheet**")
                 st.write(f"Market Cap: ${r['market_cap']:.1f}B")
