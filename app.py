@@ -123,18 +123,18 @@ VALUE_UNIVERSE = [
 # HELPER FUNCTIONS
 # ================================================================
 def normalize_dividend(div):
-    """Normalize dividend to percentage format (0-100 range).
-    Handles: decimal (0.03), percentage (3), or double-multiplied (300).
+    """Convert dividend from decimal to percentage (0.004 → 0.4).
+    Also handles edge cases where it might already be multiplied.
     """
     if div is None or div == 0:
         return div
-    # If very small (decimal like 0.03), convert to percentage
+    # If > 100, it's been multiplied multiple times - divide by 100 repeatedly
+    while div > 100:
+        div = div / 100
+    # If between 0 and 1, it's decimal - convert to percentage by multiplying by 100
     if 0 < div < 1:
         return div * 100
-    # If suspiciously large (300+), divide by 100 (double-multiplied)
-    if div > 100:
-        return div / 100
-    # Otherwise (1-100), assume already in percentage format
+    # If > 1, assume it's already in correct range
     return div
 
 
@@ -362,7 +362,7 @@ def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
         "ps":                 info.get("priceToSalesTrailing12Months"),
         "roe":                info.get("returnOnEquity"),
         "net_margin":         info.get("profitMargins"),
-        "dividend":           normalize_dividend(info.get("dividendYield")),
+        "dividend":           normalize_dividend(info.get("trailingAnnualDividendYield")),
         "revenue_growth":     round(rev_growth, 1) if rev_growth else None,
         "growth_assumption":  round(growth * 100, 1),
         "terminal_assumption": round(terminal * 100, 1),
