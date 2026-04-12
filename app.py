@@ -1151,53 +1151,52 @@ elif page == "💼 Portfolio":
 
                     if not price:
                         st.error(f"Could not fetch current price for {p_symbol}. Please try again.")
-                        return
-
-                    intrinsic = 0
-                    for db_e in st.session_state.database:
-                        if db_e.get("Symbol") == p_symbol:
-                            intrinsic = float(db_e.get("Intrinsic Value") or 0)
-                            break
-
-                    perf = (price - p_cost) / p_cost * 100
-                    dev  = (price - intrinsic) / intrinsic * 100 if intrinsic > 0 else None
-
-                    if intrinsic > 0 and dev is not None:
-                        if dev > 40:    rec = "🔴 Strong Sell"
-                        elif dev > 20:  rec = "🟠 Sell"
-                        elif dev > 0:   rec = "🟡 Hold"
-                        elif dev > -20: rec = "🟡 Hold"
-                        elif dev > -40: rec = "🟢 Buy More"
-                        else:           rec = "🟢 Strong Buy"
                     else:
-                        rec = "⚠️ Analyze first"
+                        intrinsic = 0
+                        for db_e in st.session_state.database:
+                            if db_e.get("Symbol") == p_symbol:
+                                intrinsic = float(db_e.get("Intrinsic Value") or 0)
+                                break
 
-                    position = {
-                        "Symbol":          p_symbol,
-                        "Name":            name,
-                        "Shares":          p_shares,
-                        "Purchase Price":  p_cost,
-                        "Current Price":   round(price, 2),
-                        "Invested ($)":    round(p_cost * p_shares, 2),
-                        "Current Value":   round(price * p_shares, 2),
-                        "Performance %":   round(perf, 1),
-                        "Intrinsic Value": round(intrinsic, 2),
-                        "Deviation %":     round(dev, 1) if dev else None,
-                        "Recommendation":  rec,
-                    }
+                        perf = (price - p_cost) / p_cost * 100
+                        dev  = (price - intrinsic) / intrinsic * 100 if intrinsic > 0 else None
 
-                    symbols_p = [p["Symbol"] for p in st.session_state.portfolio]
-                    if p_symbol in symbols_p:
-                        st.session_state.portfolio[symbols_p.index(p_symbol)] = position
-                    else:
-                        st.session_state.portfolio.append(position)
+                        if intrinsic > 0 and dev is not None:
+                            if dev > 40:    rec = "🔴 Strong Sell"
+                            elif dev > 20:  rec = "🟠 Sell"
+                            elif dev > 0:   rec = "🟡 Hold"
+                            elif dev > -20: rec = "🟡 Hold"
+                            elif dev > -40: rec = "🟢 Buy More"
+                            else:           rec = "🟢 Strong Buy"
+                        else:
+                            rec = "⚠️ Analyze first"
 
-                    with st.spinner("Saving portfolio..."):
-                        save_portfolio(
-                            st.session_state.portfolio,
-                            st.session_state.port_sha
-                        )
-                    st.success(f"✅ {name} added!")
+                        position = {
+                            "Symbol":          p_symbol,
+                            "Name":            name,
+                            "Shares":          p_shares,
+                            "Purchase Price":  p_cost,
+                            "Current Price":   round(price, 2),
+                            "Invested ($)":    round(p_cost * p_shares, 2),
+                            "Current Value":   round(price * p_shares, 2),
+                            "Performance %":   round(perf, 1),
+                            "Intrinsic Value": round(intrinsic, 2),
+                            "Deviation %":     round(dev, 1) if dev else None,
+                            "Recommendation":  rec,
+                        }
+
+                        symbols_p = [p["Symbol"] for p in st.session_state.portfolio]
+                        if p_symbol in symbols_p:
+                            st.session_state.portfolio[symbols_p.index(p_symbol)] = position
+                        else:
+                            st.session_state.portfolio.append(position)
+
+                        with st.spinner("Saving portfolio..."):
+                            save_portfolio(
+                                st.session_state.portfolio,
+                                st.session_state.port_sha
+                            )
+                        st.success(f"✅ {name} added!")
             else:
                 st.warning("Please select a stock, enter purchase price and number of shares.")
 
