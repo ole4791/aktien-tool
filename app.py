@@ -381,7 +381,7 @@ def result_to_db_entry(r):
         "FCF CAGR %":       r.get("fcf_cagr"),
         "ROE %":            round(r["roe"]*100,2) if r.get("roe") else None,
         "Net Margin %":     round(r["net_margin"]*100,2) if r.get("net_margin") else None,
-        "Dividend %":       round(r["dividend"], 2) if r.get("dividend") is not None else None,
+        "Dividend %":       round(r["dividend"] * 100, 2) if r.get("dividend") is not None and r["dividend"] < 1 else (round(r["dividend"], 2) if r.get("dividend") is not None else None),
         "Revenue Growth %": round(r.get("revenue_growth"), 2) if r.get("revenue_growth") else None,
         "Net Debt (Bn)":    r.get("net_debt"),
         "Market Cap (Bn)":  r.get("market_cap"),
