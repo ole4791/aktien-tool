@@ -199,7 +199,6 @@ def calculate_value_score_detail(e):
         elif roe > 7:       mult_pts += 3
     elif "Utilities" in sector or "Real Estate" in sector:
         div = e.get("dividend") or 0
-        div = div * 100 if div and abs(div) < 1 else div
         if 0 < pe < 15:     mult_pts += 12
         elif 0 < pe < 20:   mult_pts += 7
         elif 0 < pe < 25:   mult_pts += 3
@@ -237,7 +236,6 @@ def calculate_value_score_detail(e):
     stab_pts = 0
     net_debt_ratio = (e.get("net_debt") or 0) / mktcap if mktcap > 0 else 0
     div = e.get("dividend") or 0
-    div = div * 100 if div and abs(div) < 1 else div
     thresholds = (1.5, 3.0, 5.0) if no_dcf else (0.3, 0.8, 1.5)
     if net_debt_ratio < thresholds[0]:   stab_pts += 8
     elif net_debt_ratio < thresholds[1]: stab_pts += 5
@@ -513,7 +511,7 @@ if page == "🏠 Dashboard":
             .background_gradient(subset=["Value Score"], cmap="RdYlGn")
             .background_gradient(subset=["Deviation %"], cmap="RdYlGn_r")
             .format({"Deviation %": "{:+.1f}%", "Price": "${:.2f}",
-                     "Intrinsic Value": "${:.2f}"}, na_rep="N/A"),
+                     "Intrinsic Value": "${:.2f}", "Dividend %": "{:.2f}%"}, na_rep="N/A"),
             use_container_width=True,
             hide_index=True
         )
@@ -643,7 +641,7 @@ elif page == "🔍 Analysis":
                 st.write(f"ROE: {r['roe']*100:.1f}%" if r.get('roe') else "ROE: N/A")
                 st.write(f"Net Margin: {r['net_margin']*100:.1f}%" if r.get('net_margin') else "Net Margin: N/A")
                 st.write(f"Revenue Growth: {r['revenue_growth']:.1f}%" if r.get('revenue_growth') else "Revenue Growth: N/A")
-                st.write(f"Dividend Yield: {r['dividend']*100:.2f}%" if r.get('dividend') else "Dividend: none")
+                st.write(f"Dividend Yield: {r['dividend']:.2f}%" if r.get('dividend') else "Dividend: none")
             with col3:
                 st.markdown("**Balance Sheet**")
                 st.write(f"Market Cap: ${r['market_cap']:.1f}B")
@@ -1023,7 +1021,7 @@ elif page == "📊 Database":
             .background_gradient(subset=["Value Score"], cmap="RdYlGn")
             .background_gradient(subset=["Deviation %"], cmap="RdYlGn_r")
             .format({"Deviation %": "{:+.1f}%", "Price": "${:.2f}",
-                     "Intrinsic Value": "${:.2f}"}, na_rep="N/A"),
+                     "Intrinsic Value": "${:.2f}", "Dividend %": "{:.2f}%"}, na_rep="N/A"),
             use_container_width=True,
             hide_index=True
         )
