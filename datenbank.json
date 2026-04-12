@@ -26,5 +26,33 @@
     "Market Cap (Bn)": 276.23,
     "FCF Note": "✅ 3-year average",
     "Last Updated": "2026-04-12 12:14"
+  },
+  {
+    "Symbol": "PYPL",
+    "Name": "PayPal Holdings, Inc.",
+    "Sector": "Financial Services",
+    "Price": 45.24,
+    "Intrinsic Value": 84.18,
+    "With MoS": 63.14,
+    "Deviation %": -46.3,
+    "Value Score": 62,
+    "WACC %": 9.8,
+    "FCF Growth %": 2.0,
+    "Terminal %": 3.0,
+    "MoS %": 25.0,
+    "P/E": 8.36,
+    "Forward P/E": 7.79,
+    "P/B": 2.05,
+    "EV/EBITDA": 6.55,
+    "FCF (Bn)": 5.52,
+    "FCF CAGR %": null,
+    "ROE %": 25.73,
+    "Net Margin %": 15.78,
+    "Dividend %": 1.24,
+    "Revenue Growth %": 6.4,
+    "Net Debt (Bn)": 1.87,
+    "Market Cap (Bn)": 41.65,
+    "FCF Note": "✅ 3-year average",
+    "Last Updated": "2026-04-12 19:04"
   }
 ]
