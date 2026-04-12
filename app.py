@@ -122,6 +122,15 @@ VALUE_UNIVERSE = [
 # ================================================================
 # HELPER FUNCTIONS
 # ================================================================
+def normalize_dividend(div):
+    """Convert dividend to percentage format (0-100 range). If > 20, divide by 100."""
+    if div is None or div == 0:
+        return div
+    if div > 20:  # Safety check: if already multiplied twice
+        div = div / 100
+    return div
+
+
 def calculate_fcf_base(cashflow):
     if "Free Cash Flow" not in cashflow.index:
         return None, "not available", [], []
@@ -198,7 +207,7 @@ def calculate_value_score_detail(e):
         elif roe > 10:      mult_pts += 6
         elif roe > 7:       mult_pts += 3
     elif "Utilities" in sector or "Real Estate" in sector:
-        div = e.get("dividend") or 0
+        div = normalize_dividend(e.get("dividend") or 0)
         div = div * 100 if div and abs(div) < 1 else div
         if 0 < pe < 15:     mult_pts += 12
         elif 0 < pe < 20:   mult_pts += 7
@@ -236,7 +245,7 @@ def calculate_value_score_detail(e):
 
     stab_pts = 0
     net_debt_ratio = (e.get("net_debt") or 0) / mktcap if mktcap > 0 else 0
-    div = e.get("dividend") or 0
+    div = normalize_dividend(e.get("dividend") or 0)
     div = div * 100 if div and abs(div) < 1 else div
     thresholds = (1.5, 3.0, 5.0) if no_dcf else (0.3, 0.8, 1.5)
     if net_debt_ratio < thresholds[0]:   stab_pts += 8
@@ -346,7 +355,7 @@ def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
         "ps":                 info.get("priceToSalesTrailing12Months"),
         "roe":                info.get("returnOnEquity"),
         "net_margin":         info.get("profitMargins"),
-        "dividend":           info.get("dividendYield"),
+        "dividend":           normalize_dividend(info.get("dividendYield")),
         "revenue_growth":     round(rev_growth, 1) if rev_growth else None,
         "growth_assumption":  round(growth * 100, 1),
         "terminal_assumption": round(terminal * 100, 1),
@@ -381,7 +390,7 @@ def result_to_db_entry(r):
         "FCF CAGR %":       r.get("fcf_cagr"),
         "ROE %":            round(r["roe"]*100,1) if r.get("roe") else None,
         "Net Margin %":     round(r["net_margin"]*100,1) if r.get("net_margin") else None,
-        "Dividend %":       round(r["dividend"]*100,2) if r.get("dividend") else None,
+        "Dividend %":       round(normalize_dividend(r["dividend"])*100,2) if r.get("dividend") is not None else None,
         "Revenue Growth %": r.get("revenue_growth"),
         "Net Debt (Bn)":    r.get("net_debt"),
         "Market Cap (Bn)":  r.get("market_cap"),
@@ -643,7 +652,7 @@ elif page == "🔍 Analysis":
                 st.write(f"ROE: {r['roe']*100:.1f}%" if r.get('roe') else "ROE: N/A")
                 st.write(f"Net Margin: {r['net_margin']*100:.1f}%" if r.get('net_margin') else "Net Margin: N/A")
                 st.write(f"Revenue Growth: {r['revenue_growth']:.1f}%" if r.get('revenue_growth') else "Revenue Growth: N/A")
-                st.write(f"Dividend Yield: {r['dividend']*100:.2f}%" if r.get('dividend') else "Dividend: none")
+                st.write(f"Dividend Yield: {normalize_dividend(r['dividend'])*100:.2f}%" if r.get('dividend') is not None else "Dividend: none")
             with col3:
                 st.markdown("**Balance Sheet**")
                 st.write(f"Market Cap: ${r['market_cap']:.1f}B")
