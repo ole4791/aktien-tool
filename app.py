@@ -123,18 +123,15 @@ VALUE_UNIVERSE = [
 # HELPER FUNCTIONS
 # ================================================================
 def normalize_dividend(div):
-    """Convert dividend from decimal to percentage (0.004 → 0.4).
-    Also handles edge cases where it might already be multiplied.
+    """Dividend from yfinance trailingAnnualDividendYield is already in percentage format (0.39540865 = 0.3954%).
+    Just return as-is, but handle edge cases (values > 100).
     """
     if div is None or div == 0:
         return div
-    # If > 100, it's been multiplied multiple times - divide by 100 repeatedly
-    while div > 100:
-        div = div / 100
-    # If between 0 and 1, it's decimal - convert to percentage by multiplying by 100
-    if 0 < div < 1:
-        return div * 100
-    # If > 1, assume it's already in correct range
+    # If > 100, it's been multiplied - divide by 100
+    if div > 100:
+        return div / 100
+    # Otherwise return as-is (already in correct percentage format)
     return div
 
 
