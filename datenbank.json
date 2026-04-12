@@ -194,5 +194,33 @@
     "Market Cap (Bn)": 18.99,
     "FCF Note": "✅ 3-year average",
     "Last Updated": "2026-04-12 19:12"
+  },
+  {
+    "Symbol": "VWAPY",
+    "Name": "Volkswagen AG",
+    "Sector": "Consumer Cyclical",
+    "Price": 10.41,
+    "Intrinsic Value": -5.97,
+    "With MoS": -4.48,
+    "Deviation %": -274.4,
+    "Value Score": 66,
+    "WACC %": 4.2,
+    "FCF Growth %": -2.0,
+    "Terminal %": 2.0,
+    "MoS %": 25.0,
+    "P/E": 6.72,
+    "Forward P/E": 0.34,
+    "P/B": 0.03,
+    "EV/EBITDA": 9.08,
+    "FCF (Bn)": 5.82,
+    "FCF CAGR %": null,
+    "ROE %": 3.45,
+    "Net Margin %": 2.28,
+    "Dividend %": 6.91,
+    "Revenue Growth %": null,
+    "Net Debt (Bn)": 200.62,
+    "Market Cap (Bn)": 52.87,
+    "FCF Note": "⚠️ avg of 1 positive years",
+    "Last Updated": "2026-04-12 19:40"
   }
 ]
