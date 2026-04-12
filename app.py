@@ -156,49 +156,70 @@ def calculate_wacc(info):
 
 
 def calculate_value_score_detail(e):
-    details  = {}
-    sector   = e.get("sector") or ""
-    fcf      = e.get("fcf") or 0
-    no_dcf   = any(s in sector for s in ["Financial","Utilities","Real Estate"])
+    details     = {}
+    sector      = e.get("sector") or ""
+    fcf         = e.get("fcf") or 0
+    mktcap      = e.get("market_cap") or 0
+    div         = e.get("dividend") or 0
+    is_fin      = "Financial" in sector
+    is_util_re  = "Utilities" in sector or "Real Estate" in sector
+    has_div     = div > 0
 
-    dcf_pts = 0
-    if not no_dcf and fcf > 0:
-        dev = e.get("deviation") or 0
-        if dev < -40:   dcf_pts = 25
-        elif dev < -20: dcf_pts = 18
-        elif dev < 0:   dcf_pts = 10
-        elif dev < 20:  dcf_pts = 4
-    details["DCF Deviation"] = {"points": dcf_pts, "max": 25}
+    # --- DCF Deviation (max 25) ---
+    if is_fin:
+        details["DCF Deviation"] = {
+            "points": 0, "max": 25, "applicable": False,
+            "note": "Not applicable – Financial sector: banks have no operational FCF"
+        }
+    elif is_util_re:
+        details["DCF Deviation"] = {
+            "points": 0, "max": 25, "applicable": False,
+            "note": "Not applicable – Utilities/REITs: dividend yield used instead"
+        }
+    else:
+        dcf_pts = 0
+        if fcf > 0:
+            dev = e.get("deviation") or 0
+            if dev < -40:   dcf_pts = 25
+            elif dev < -20: dcf_pts = 18
+            elif dev < 0:   dcf_pts = 10
+            elif dev < 20:  dcf_pts = 4
+        details["DCF Deviation"] = {"points": dcf_pts, "max": 25, "applicable": True, "note": ""}
 
-    fcf_pts   = 0
-    mktcap    = e.get("market_cap") or 0
-    fcf_yield = (fcf / mktcap * 100) if mktcap > 0 and fcf > 0 else 0
-    fcf_cagr  = e.get("fcf_cagr") or 0
-    if not no_dcf:
-        if fcf > 0:          fcf_pts += 5
-        if fcf_yield > 8:    fcf_pts += 8
-        elif fcf_yield > 5:  fcf_pts += 5
-        elif fcf_yield > 3:  fcf_pts += 2
-        if fcf_cagr > 10:    fcf_pts += 7
-        elif fcf_cagr > 5:   fcf_pts += 4
-        elif fcf_cagr > 0:   fcf_pts += 2
-    details["FCF Quality"] = {"points": fcf_pts, "max": 20}
+    # --- FCF Quality (max 20) ---
+    if is_fin:
+        details["FCF Quality"] = {
+            "points": 0, "max": 20, "applicable": False,
+            "note": "Not applicable – Financial sector: asset-based business model"
+        }
+    else:
+        fcf_yield = (fcf / mktcap * 100) if mktcap > 0 and fcf > 0 else 0
+        fcf_cagr  = e.get("fcf_cagr") or 0
+        fcf_pts   = 0
+        if fcf > 0:         fcf_pts += 5
+        if fcf_yield > 8:   fcf_pts += 8
+        elif fcf_yield > 5: fcf_pts += 5
+        elif fcf_yield > 3: fcf_pts += 2
+        if fcf_cagr > 10:   fcf_pts += 7
+        elif fcf_cagr > 5:  fcf_pts += 4
+        elif fcf_cagr > 0:  fcf_pts += 2
+        details["FCF Quality"] = {"points": fcf_pts, "max": 20, "applicable": True, "note": ""}
 
-    mult_pts = 0
+    # --- Valuation (max 25) ---
     pe   = e.get("pe") or 0
     pb   = e.get("pb") or 0
     eveb = e.get("ev_ebitda") or 0
     roe  = e.get("roe") or 0
     roe  = roe * 100 if roe and abs(roe) < 2 else roe
-    if "Financial" in sector:
+    mult_pts = 0
+    if is_fin:
         if 0 < pb < 0.8:    mult_pts += 15
         elif 0 < pb < 1.2:  mult_pts += 10
         elif 0 < pb < 1.8:  mult_pts += 5
         if roe > 15:        mult_pts += 10
         elif roe > 10:      mult_pts += 6
         elif roe > 7:       mult_pts += 3
-    elif "Utilities" in sector or "Real Estate" in sector:
-        div = e.get("dividend") or 0
+    elif is_util_re:
         if 0 < pe < 15:     mult_pts += 12
         elif 0 < pe < 20:   mult_pts += 7
         elif 0 < pe < 25:   mult_pts += 3
@@ -220,32 +241,42 @@ def calculate_value_score_detail(e):
         elif 0 < pb < 5:    mult_pts += 2
         if 0 < eveb < 8:    mult_pts += 8
         elif 0 < eveb < 12: mult_pts += 4
-    details["Valuation"] = {"points": mult_pts, "max": 25}
+    details["Valuation"] = {"points": mult_pts, "max": 25, "applicable": True, "note": ""}
 
+    # --- Profitability (max 15) ---
+    margin = e.get("net_margin") or 0
+    margin = margin * 100 if margin and abs(margin) < 1 else margin
     prof_pts = 0
-    margin   = e.get("net_margin") or 0
-    margin   = margin * 100 if margin and abs(margin) < 1 else margin
-    if roe > 20:     prof_pts += 8
-    elif roe > 12:   prof_pts += 5
-    elif roe > 8:    prof_pts += 2
-    if margin > 20:  prof_pts += 7
+    if roe > 20:      prof_pts += 8
+    elif roe > 12:    prof_pts += 5
+    elif roe > 8:     prof_pts += 2
+    if margin > 20:   prof_pts += 7
     elif margin > 10: prof_pts += 4
-    elif margin > 5: prof_pts += 2
-    details["Profitability"] = {"points": prof_pts, "max": 15}
+    elif margin > 5:  prof_pts += 2
+    details["Profitability"] = {"points": prof_pts, "max": 15, "applicable": True, "note": ""}
 
-    stab_pts = 0
+    # --- Stability (max 15, or 8 if no dividend) ---
+    thresholds = (1.5, 3.0, 5.0) if (is_fin or is_util_re) else (0.3, 0.8, 1.5)
     net_debt_ratio = (e.get("net_debt") or 0) / mktcap if mktcap > 0 else 0
-    div = e.get("dividend") or 0
-    thresholds = (1.5, 3.0, 5.0) if no_dcf else (0.3, 0.8, 1.5)
+    stab_pts = 0
     if net_debt_ratio < thresholds[0]:   stab_pts += 8
     elif net_debt_ratio < thresholds[1]: stab_pts += 5
     elif net_debt_ratio < thresholds[2]: stab_pts += 2
-    if div > 0: stab_pts += 4
-    if div > 3: stab_pts += 3
-    details["Stability"] = {"points": stab_pts, "max": 15}
+    if has_div:
+        if div > 0: stab_pts += 4
+        if div > 3: stab_pts += 3
+        stab_max  = 15
+        stab_note = ""
+    else:
+        stab_max  = 8
+        stab_note = "Dividend component skipped – no dividend paid"
+    details["Stability"] = {"points": stab_pts, "max": stab_max, "applicable": True, "note": stab_note}
 
-    total = sum(d["points"] for d in details.values())
-    return min(round(total), 100), details
+    # --- Final score: achieved / max_applicable * 100 ---
+    achieved = sum(d["points"] for d in details.values() if d["applicable"])
+    maximum  = sum(d["max"]    for d in details.values() if d["applicable"])
+    score    = round(achieved / maximum * 100) if maximum > 0 else 0
+    return min(score, 100), details
 
 
 def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
@@ -430,34 +461,46 @@ def show_value_score(result):
     if details:
         cols = st.columns(len(details))
         for i, (name, vals) in enumerate(details.items()):
-            p   = vals["points"]
-            m   = vals["max"]
-            ico = score_color(p, m)
-            cols[i].metric(
-                label=f"{ico} {name}",
-                value=f"{p}/{m}",
-                delta=f"{round(p/m*100):.0f}%" if m > 0 else "N/A"
+            p          = vals["points"]
+            m          = vals["max"]
+            applicable = vals.get("applicable", True)
+            note       = vals.get("note", "")
+            if not applicable:
+                cols[i].metric(label=f"⚪ {name}", value="N/A", delta="Skipped")
+                if note:
+                    cols[i].caption(note)
+            else:
+                ico = score_color(p, m)
+                cols[i].metric(
+                    label=f"{ico} {name}",
+                    value=f"{p}/{m}",
+                    delta=f"{round(p/m*100):.0f}%" if m > 0 else "N/A"
+                )
+                if note:
+                    cols[i].caption(note)
+
+        applicable_details = {k: v for k, v in details.items() if v.get("applicable", True)}
+        if applicable_details:
+            fig = go.Figure(go.Bar(
+                x=list(applicable_details.keys()),
+                y=[d["points"] for d in applicable_details.values()],
+                marker_color=[
+                    "#1D9E75" if d["points"]/d["max"] >= 0.75
+                    else "#EF9F27" if d["points"]/d["max"] >= 0.5
+                    else "#E8593C" if d["points"]/d["max"] >= 0.25
+                    else "#A32D2D"
+                    for d in applicable_details.values()
+                ],
+                text=[f"{d['points']}/{d['max']}" for d in applicable_details.values()],
+                textposition="auto"
+            ))
+            fig.update_layout(
+                title="Value Score Breakdown (applicable categories only)",
+                yaxis_title="Points",
+                height=260,
+                showlegend=False
             )
-        fig = go.Figure(go.Bar(
-            x=list(details.keys()),
-            y=[d["points"] for d in details.values()],
-            marker_color=[
-                "#1D9E75" if d["points"]/d["max"] >= 0.75
-                else "#EF9F27" if d["points"]/d["max"] >= 0.5
-                else "#E8593C" if d["points"]/d["max"] >= 0.25
-                else "#A32D2D"
-                for d in details.values()
-            ],
-            text=[f"{d['points']}/{d['max']}" for d in details.values()],
-            textposition="auto"
-        ))
-        fig.update_layout(
-            title="Value Score Breakdown",
-            yaxis_title="Points",
-            height=260,
-            showlegend=False
-        )
-        st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True)
 
 
 # ================================================================
