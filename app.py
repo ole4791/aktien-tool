@@ -269,30 +269,45 @@ def calculate_value_score_detail(e):
 
 
 def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
-    # Retry up to 2 times for transient errors
-    for attempt in range(2):
+    """Run DCF valuation with improved error handling and retry logic."""
+
+    for attempt in range(3):  # 3 attempts instead of 2
         try:
-            ticker     = yf.Ticker(symbol)
-            info       = ticker.info
-            cashflow   = ticker.cashflow
+            ticker = yf.Ticker(symbol)
+            # Try to fetch info first with retry
+            info = ticker.info
+            if not info or not info.get("longName"):
+                return None, "Stock not found"
+
+            # Fetch cashflow and financials
+            cashflow = ticker.cashflow
             financials = ticker.financials
             break  # Success, exit retry loop
+
         except Exception as ex:
             error_msg = str(ex)
-            # Handle HTTP errors and timeouts gracefully
-            if "429" in error_msg or "Too Many Requests" in error_msg:
-                if attempt < 1:
-                    time.sleep(1)  # Wait before retry
-                    continue
-                return None, "Service temporarily busy. Please try again in a moment."
-            if "404" in error_msg or "not found" in error_msg.lower():
+            is_rate_limit = "429" in error_msg or "Too Many Requests" in error_msg or "rate" in error_msg.lower()
+            is_timeout = "timeout" in error_msg.lower() or "connection" in error_msg.lower()
+            is_not_found = "404" in error_msg or "not found" in error_msg.lower()
+
+            # Retry for rate limits and timeouts
+            if (is_rate_limit or is_timeout) and attempt < 2:
+                wait_time = 2 ** attempt  # Exponential: 1s, 2s, 4s
+                time.sleep(wait_time)
+                continue
+
+            # Handle permanent errors
+            if is_not_found:
                 return None, "Stock symbol not found. Please check the ticker."
-            if "timeout" in error_msg.lower():
-                if attempt < 1:
-                    time.sleep(1)
-                    continue
+            if is_rate_limit:
+                return None, "Service temporarily busy. Please try again in a few moments."
+            if is_timeout:
                 return None, "Connection timeout. Please try again."
-            return None, f"Error fetching data: {error_msg[:100]}"
+
+            # Generic error
+            return None, f"Error fetching data: {error_msg[:80]}"
+
+    # Continue with normal DCF calculation
 
     if not info or not info.get("longName"):
         return None, "Stock not found"
@@ -439,15 +454,23 @@ def save_to_database(result):
 
 
 def search_stock(query):
-    try:
-        res  = yf.Search(query, max_results=6)
-        hits = res.quotes
-        if hits:
-            names   = [f"{h.get('shortname', h.get('longname','?'))} – {h.get('symbol','?')}" for h in hits]
-            symbols = [h.get("symbol","") for h in hits]
-            return names, symbols
-    except:
-        pass
+    """Search for stocks with retry logic."""
+    for attempt in range(2):
+        try:
+            res  = yf.Search(query, max_results=6)
+            hits = res.quotes
+            if hits:
+                names   = [f"{h.get('shortname', h.get('longname','?'))} – {h.get('symbol','?')}" for h in hits]
+                symbols = [h.get("symbol","") for h in hits]
+                return names, symbols
+            return [], []
+        except Exception as ex:
+            if "429" in str(ex) or "rate" in str(ex).lower():
+                if attempt < 1:
+                    time.sleep(1)
+                    continue
+            # If search fails, return empty results
+            pass
     return [], []
 
 
@@ -1116,9 +1139,19 @@ elif page == "💼 Portfolio":
         if st.button("Add Position", type="primary", key="p_add"):
             if p_symbol and p_cost > 0 and p_shares > 0:
                 with st.spinner(f"Loading {p_symbol}..."):
-                    info  = yf.Ticker(p_symbol).info
-                    price = float(info.get("currentPrice") or 0)
-                    name  = info.get("longName", p_symbol)
+                    try:
+                        info  = yf.Ticker(p_symbol).info
+                        price = float(info.get("currentPrice") or 0)
+                        name  = info.get("longName", p_symbol)
+                    except Exception as e:
+                        st.error(f"Error loading {p_symbol}: {str(e)[:80]}")
+                        info = {}
+                        price = 0
+                        name = p_symbol
+
+                    if not price:
+                        st.error(f"Could not fetch current price for {p_symbol}. Please try again.")
+                        return
 
                     intrinsic = 0
                     for db_e in st.session_state.database:
