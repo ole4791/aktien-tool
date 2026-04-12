@@ -269,12 +269,11 @@ def calculate_value_score_detail(e):
 
 
 def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
-    """Run DCF valuation with improved error handling and retry logic."""
+    """Run DCF valuation with improved error handling and extended retry logic."""
 
-    for attempt in range(3):  # 3 attempts instead of 2
+    for attempt in range(4):  # 4 attempts with longer waits
         try:
             ticker = yf.Ticker(symbol)
-            # Try to fetch info first with retry
             info = ticker.info
             if not info or not info.get("longName"):
                 return None, "Stock not found"
@@ -286,13 +285,13 @@ def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
 
         except Exception as ex:
             error_msg = str(ex)
-            is_rate_limit = "429" in error_msg or "Too Many Requests" in error_msg or "rate" in error_msg.lower()
+            is_rate_limit = "429" in error_msg or "Too Many Requests" in error_msg or "rate" in error_msg.lower() or "busy" in error_msg.lower()
             is_timeout = "timeout" in error_msg.lower() or "connection" in error_msg.lower()
             is_not_found = "404" in error_msg or "not found" in error_msg.lower()
 
-            # Retry for rate limits and timeouts
-            if (is_rate_limit or is_timeout) and attempt < 2:
-                wait_time = 2 ** attempt  # Exponential: 1s, 2s, 4s
+            # Retry for rate limits and timeouts, with exponentially increasing wait
+            if (is_rate_limit or is_timeout) and attempt < 3:
+                wait_time = (attempt + 1) * 2  # 2s, 4s, 6s
                 time.sleep(wait_time)
                 continue
 
@@ -300,12 +299,12 @@ def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
             if is_not_found:
                 return None, "Stock symbol not found. Please check the ticker."
             if is_rate_limit:
-                return None, "Service temporarily busy. Please try again in a few moments."
+                return None, "yfinance API temporarily unavailable. Please try again in a few minutes."
             if is_timeout:
-                return None, "Connection timeout. Please try again."
+                return None, "Connection timeout - yfinance service overloaded. Please try again later."
 
             # Generic error
-            return None, f"Error fetching data: {error_msg[:80]}"
+            return None, f"Error: {error_msg[:80]}"
 
     # Continue with normal DCF calculation
 
