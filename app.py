@@ -634,7 +634,7 @@ elif page == "🔍 Analysis":
         col2.metric("Intrinsic Value", f"${r['intrinsic']:.2f}")
         col3.metric("With MoS",        f"${r['with_margin']:.2f}")
         dev = r["deviation"]
-        col4.metric("Valuation", f"{dev:+.1f}%",
+        col4.metric("Valuation", f"{dev:+.2f}%",
                     delta="Overvalued" if dev > 0 else "Undervalued",
                     delta_color="inverse")
 
@@ -651,24 +651,24 @@ elif page == "🔍 Analysis":
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.markdown("**Valuation**")
-                st.write(f"P/E: {r['pe']:.1f}" if r.get('pe') else "P/E: N/A")
-                st.write(f"Forward P/E: {r['forward_pe']:.1f}" if r.get('forward_pe') else "Forward P/E: N/A")
+                st.write(f"P/E: {r['pe']:.2f}" if r.get('pe') else "P/E: N/A")
+                st.write(f"Forward P/E: {r['forward_pe']:.2f}" if r.get('forward_pe') else "Forward P/E: N/A")
                 st.write(f"P/B: {r['pb']:.2f}" if r.get('pb') else "P/B: N/A")
-                st.write(f"EV/EBITDA: {r['ev_ebitda']:.1f}" if r.get('ev_ebitda') else "EV/EBITDA: N/A")
+                st.write(f"EV/EBITDA: {r['ev_ebitda']:.2f}" if r.get('ev_ebitda') else "EV/EBITDA: N/A")
                 st.write(f"P/S: {r['ps']:.2f}" if r.get('ps') else "P/S: N/A")
             with col2:
                 st.markdown("**Profitability**")
-                st.write(f"ROE: {r['roe']*100:.1f}%" if r.get('roe') else "ROE: N/A")
-                st.write(f"Net Margin: {r['net_margin']*100:.1f}%" if r.get('net_margin') else "Net Margin: N/A")
-                st.write(f"Revenue Growth: {r['revenue_growth']:.1f}%" if r.get('revenue_growth') else "Revenue Growth: N/A")
+                st.write(f"ROE: {r['roe']*100:.2f}%" if r.get('roe') else "ROE: N/A")
+                st.write(f"Net Margin: {r['net_margin']*100:.2f}%" if r.get('net_margin') else "Net Margin: N/A")
+                st.write(f"Revenue Growth: {r['revenue_growth']:.2f}%" if r.get('revenue_growth') else "Revenue Growth: N/A")
                 st.write(f"Dividend Yield: {normalize_dividend(r['dividend']):.2f}%" if r.get('dividend') is not None else "Dividend: none")
             with col3:
                 st.markdown("**Balance Sheet**")
-                st.write(f"Market Cap: ${r['market_cap']:.1f}B")
+                st.write(f"Market Cap: ${r['market_cap']:.2f}B")
                 st.write(f"Total Debt: ${r['total_debt']:.2f}B")
                 st.write(f"Cash: ${r['cash']:.2f}B")
                 st.write(f"Net Debt: ${r['net_debt']:.2f}B")
-                st.write(f"Shares Outstanding: {r['shares']:.3f}B")
+                st.write(f"Shares Outstanding: {r['shares']:.2f}B")
 
         with tab2:
             col1, col2 = st.columns(2)
@@ -676,7 +676,7 @@ elif page == "🔍 Analysis":
                 st.markdown("**Historical FCF**")
                 st.write(f"FCF Base (used): ${r['fcf']}B")
                 st.write(f"Quality: {r['fcf_note']}")
-                st.write(f"FCF CAGR: {r['fcf_cagr']:.1f}%" if r.get('fcf_cagr') else "FCF CAGR: N/A")
+                st.write(f"FCF CAGR: {r['fcf_cagr']:.2f}%" if r.get('fcf_cagr') else "FCF CAGR: N/A")
                 if r.get('fcf_history'):
                     fcf_df = pd.DataFrame({
                         "Year":     r['fcf_years'],
@@ -866,7 +866,7 @@ elif page == "🔍 Analysis":
                                     y=avg_pe,
                                     line_dash="dash",
                                     line_color="gray",
-                                    annotation_text=f"Avg P/E: {avg_pe:.1f}",
+                                    annotation_text=f"Avg P/E: {avg_pe:.2f}",
                                     annotation_position="top left"
                                 )
                                 if current_pe > 0:
@@ -874,17 +874,17 @@ elif page == "🔍 Analysis":
                                         y=current_pe,
                                         line_dash="dot",
                                         line_color="#E24B4A",
-                                        annotation_text=f"Current P/E: {current_pe:.1f}",
+                                        annotation_text=f"Current P/E: {current_pe:.2f}",
                                         annotation_position="bottom right"
                                     )
                                 fig_h2.update_layout(height=350)
                                 st.plotly_chart(fig_h2, use_container_width=True)
                                 col1, col2, col3 = st.columns(3)
-                                col1.metric("Current P/E", f"{current_pe:.1f}" if current_pe else "N/A")
-                                col2.metric("Avg P/E",     f"{avg_pe:.1f}")
+                                col1.metric("Current P/E", f"{current_pe:.2f}" if current_pe else "N/A")
+                                col2.metric("Avg P/E",     f"{avg_pe:.2f}")
                                 col3.metric(
                                     "vs. Average",
-                                    f"{((current_pe/avg_pe)-1)*100:+.1f}%" if current_pe and avg_pe else "N/A",
+                                    f"{((current_pe/avg_pe)-1)*100:+.2f}%" if current_pe and avg_pe else "N/A",
                                     delta_color="inverse"
                                 )
                                 if current_pe and avg_pe:
@@ -934,7 +934,7 @@ elif page == "🔍 Analysis":
                                     fcf_trend = ((pos_fcfs[-1]/pos_fcfs[0]) ** (1/(len(pos_fcfs)-1)) - 1) * 100
                                     col1, col2, col3 = st.columns(3)
                                     col1.metric("Latest FCF",     f"${fcf_hist_df['FCF ($B)'].iloc[-1]:.2f}B")
-                                    col2.metric("FCF CAGR",       f"{fcf_trend:+.1f}%")
+                                    col2.metric("FCF CAGR",       f"{fcf_trend:+.2f}%")
                                     col3.metric("Positive Years", f"{len(pos_fcfs)}/{len(fcf_hist_df)}")
                             else:
                                 st.info("FCF history not available.")
@@ -1161,7 +1161,7 @@ elif page == "💼 Portfolio":
         col1.metric("Positions",     len(df_p))
         col2.metric("Invested",      f"${total_invest:,.2f}")
         col3.metric("Current Value", f"${total_value:,.2f}")
-        col4.metric("Performance",   f"{total_perf:+.1f}%")
+        col4.metric("Performance",   f"{total_perf:+.2f}%")
 
         st.divider()
         st.dataframe(df_p, use_container_width=True, hide_index=True)
