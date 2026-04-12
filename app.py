@@ -123,15 +123,20 @@ VALUE_UNIVERSE = [
 # HELPER FUNCTIONS
 # ================================================================
 def normalize_dividend(div):
-    """Dividend from yfinance trailingAnnualDividendYield is already in percentage format (0.39540865 = 0.3954%).
-    Just return as-is, but handle edge cases (values > 100).
+    """Normalize dividend to percentage format (0-100 range).
+    Handles both formats from yfinance:
+    - Decimal: 0.032 → 3.2
+    - Percentage: 3.2 → 3.2
     """
     if div is None or div == 0:
         return div
-    # If > 100, it's been multiplied - divide by 100
+    # If very large (>100), divide by 100 (over-multiplied)
     if div > 100:
         return div / 100
-    # Otherwise return as-is (already in correct percentage format)
+    # If between 0 and 1 (decimal like 0.032), convert to percentage
+    if 0 < div < 1:
+        return div * 100
+    # Otherwise (>= 1), assume already in percentage format
     return div
 
 
@@ -359,7 +364,7 @@ def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
         "ps":                 info.get("priceToSalesTrailing12Months"),
         "roe":                info.get("returnOnEquity"),
         "net_margin":         info.get("profitMargins"),
-        "dividend":           normalize_dividend(info.get("trailingAnnualDividendYield")),
+        "dividend":           normalize_dividend(info.get("dividendYield")),
         "revenue_growth":     round(rev_growth, 1) if rev_growth else None,
         "growth_assumption":  round(growth * 100, 1),
         "terminal_assumption": round(terminal * 100, 1),
