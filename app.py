@@ -1028,7 +1028,7 @@ elif page == "📊 Database":
                      "EV/EBITDA": "{:.2f}", "FCF CAGR %": "{:.2f}",
                      "ROE %": "{:.2f}", "Net Margin %": "{:.2f}",
                      "FCF Growth %": "{:.2f}", "Terminal %": "{:.2f}",
-                     "MoS %": "{:.0f}"}, na_rep="N/A"),
+                     "MoS %": "{:.0f}", "WACC %": "{:.2f}"}, na_rep="N/A"),
             use_container_width=True,
             hide_index=True
         )
