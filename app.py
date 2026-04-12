@@ -269,13 +269,30 @@ def calculate_value_score_detail(e):
 
 
 def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
-    try:
-        ticker     = yf.Ticker(symbol)
-        info       = ticker.info
-        cashflow   = ticker.cashflow
-        financials = ticker.financials
-    except Exception as ex:
-        return None, str(ex)
+    # Retry up to 2 times for transient errors
+    for attempt in range(2):
+        try:
+            ticker     = yf.Ticker(symbol)
+            info       = ticker.info
+            cashflow   = ticker.cashflow
+            financials = ticker.financials
+            break  # Success, exit retry loop
+        except Exception as ex:
+            error_msg = str(ex)
+            # Handle HTTP errors and timeouts gracefully
+            if "429" in error_msg or "Too Many Requests" in error_msg:
+                if attempt < 1:
+                    time.sleep(1)  # Wait before retry
+                    continue
+                return None, "Service temporarily busy. Please try again in a moment."
+            if "404" in error_msg or "not found" in error_msg.lower():
+                return None, "Stock symbol not found. Please check the ticker."
+            if "timeout" in error_msg.lower():
+                if attempt < 1:
+                    time.sleep(1)
+                    continue
+                return None, "Connection timeout. Please try again."
+            return None, f"Error fetching data: {error_msg[:100]}"
 
     if not info or not info.get("longName"):
         return None, "Stock not found"
