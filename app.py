@@ -269,44 +269,13 @@ def calculate_value_score_detail(e):
 
 
 def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
-    """Run DCF valuation with improved error handling and extended retry logic."""
-
-    for attempt in range(4):  # 4 attempts with longer waits
-        try:
-            ticker = yf.Ticker(symbol)
-            info = ticker.info
-            if not info or not info.get("longName"):
-                return None, "Stock not found"
-
-            # Fetch cashflow and financials
-            cashflow = ticker.cashflow
-            financials = ticker.financials
-            break  # Success, exit retry loop
-
-        except Exception as ex:
-            error_msg = str(ex)
-            is_rate_limit = "429" in error_msg or "Too Many Requests" in error_msg or "rate" in error_msg.lower() or "busy" in error_msg.lower()
-            is_timeout = "timeout" in error_msg.lower() or "connection" in error_msg.lower()
-            is_not_found = "404" in error_msg or "not found" in error_msg.lower()
-
-            # Retry for rate limits and timeouts, with exponentially increasing wait
-            if (is_rate_limit or is_timeout) and attempt < 3:
-                wait_time = (attempt + 1) * 2  # 2s, 4s, 6s
-                time.sleep(wait_time)
-                continue
-
-            # Handle permanent errors
-            if is_not_found:
-                return None, "Stock symbol not found. Please check the ticker."
-            if is_rate_limit:
-                return None, "yfinance API temporarily unavailable. Please try again in a few minutes."
-            if is_timeout:
-                return None, "Connection timeout - yfinance service overloaded. Please try again later."
-
-            # Generic error
-            return None, f"Error: {error_msg[:80]}"
-
-    # Continue with normal DCF calculation
+    try:
+        ticker     = yf.Ticker(symbol)
+        info       = ticker.info
+        cashflow   = ticker.cashflow
+        financials = ticker.financials
+    except Exception as ex:
+        return None, str(ex)
 
     if not info or not info.get("longName"):
         return None, "Stock not found"
@@ -453,23 +422,15 @@ def save_to_database(result):
 
 
 def search_stock(query):
-    """Search for stocks with retry logic."""
-    for attempt in range(2):
-        try:
-            res  = yf.Search(query, max_results=6)
-            hits = res.quotes
-            if hits:
-                names   = [f"{h.get('shortname', h.get('longname','?'))} – {h.get('symbol','?')}" for h in hits]
-                symbols = [h.get("symbol","") for h in hits]
-                return names, symbols
-            return [], []
-        except Exception as ex:
-            if "429" in str(ex) or "rate" in str(ex).lower():
-                if attempt < 1:
-                    time.sleep(1)
-                    continue
-            # If search fails, return empty results
-            pass
+    try:
+        res  = yf.Search(query, max_results=6)
+        hits = res.quotes
+        if hits:
+            names   = [f"{h.get('shortname', h.get('longname','?'))} – {h.get('symbol','?')}" for h in hits]
+            symbols = [h.get("symbol","") for h in hits]
+            return names, symbols
+    except:
+        pass
     return [], []
 
 
@@ -1138,64 +1099,55 @@ elif page == "💼 Portfolio":
         if st.button("Add Position", type="primary", key="p_add"):
             if p_symbol and p_cost > 0 and p_shares > 0:
                 with st.spinner(f"Loading {p_symbol}..."):
-                    try:
-                        info  = yf.Ticker(p_symbol).info
-                        price = float(info.get("currentPrice") or 0)
-                        name  = info.get("longName", p_symbol)
-                    except Exception as e:
-                        st.error(f"Error loading {p_symbol}: {str(e)[:80]}")
-                        info = {}
-                        price = 0
-                        name = p_symbol
+                    info  = yf.Ticker(p_symbol).info
+                    price = float(info.get("currentPrice") or 0)
+                    name  = info.get("longName", p_symbol)
 
-                    if not price:
-                        st.error(f"Could not fetch current price for {p_symbol}. Please try again.")
+                    intrinsic = 0
+                    for db_e in st.session_state.database:
+                        if db_e.get("Symbol") == p_symbol:
+                            intrinsic = float(db_e.get("Intrinsic Value") or 0)
+                            break
+
+                    perf = (price - p_cost) / p_cost * 100
+                    dev  = (price - intrinsic) / intrinsic * 100 if intrinsic > 0 else None
+
+                    if intrinsic > 0 and dev is not None:
+                        if dev > 40:    rec = "🔴 Strong Sell"
+                        elif dev > 20:  rec = "🟠 Sell"
+                        elif dev > 0:   rec = "🟡 Hold"
+                        elif dev > -20: rec = "🟡 Hold"
+                        elif dev > -40: rec = "🟢 Buy More"
+                        else:           rec = "🟢 Strong Buy"
                     else:
-                        intrinsic = 0
-                        for db_e in st.session_state.database:
-                            if db_e.get("Symbol") == p_symbol:
-                                intrinsic = float(db_e.get("Intrinsic Value") or 0)
-                                break
+                        rec = "⚠️ Analyze first"
 
-                        perf = (price - p_cost) / p_cost * 100
-                        dev  = (price - intrinsic) / intrinsic * 100 if intrinsic > 0 else None
+                    position = {
+                        "Symbol":          p_symbol,
+                        "Name":            name,
+                        "Shares":          p_shares,
+                        "Purchase Price":  p_cost,
+                        "Current Price":   round(price, 2),
+                        "Invested ($)":    round(p_cost * p_shares, 2),
+                        "Current Value":   round(price * p_shares, 2),
+                        "Performance %":   round(perf, 1),
+                        "Intrinsic Value": round(intrinsic, 2),
+                        "Deviation %":     round(dev, 1) if dev else None,
+                        "Recommendation":  rec,
+                    }
 
-                        if intrinsic > 0 and dev is not None:
-                            if dev > 40:    rec = "🔴 Strong Sell"
-                            elif dev > 20:  rec = "🟠 Sell"
-                            elif dev > 0:   rec = "🟡 Hold"
-                            elif dev > -20: rec = "🟡 Hold"
-                            elif dev > -40: rec = "🟢 Buy More"
-                            else:           rec = "🟢 Strong Buy"
-                        else:
-                            rec = "⚠️ Analyze first"
+                    symbols_p = [p["Symbol"] for p in st.session_state.portfolio]
+                    if p_symbol in symbols_p:
+                        st.session_state.portfolio[symbols_p.index(p_symbol)] = position
+                    else:
+                        st.session_state.portfolio.append(position)
 
-                        position = {
-                            "Symbol":          p_symbol,
-                            "Name":            name,
-                            "Shares":          p_shares,
-                            "Purchase Price":  p_cost,
-                            "Current Price":   round(price, 2),
-                            "Invested ($)":    round(p_cost * p_shares, 2),
-                            "Current Value":   round(price * p_shares, 2),
-                            "Performance %":   round(perf, 1),
-                            "Intrinsic Value": round(intrinsic, 2),
-                            "Deviation %":     round(dev, 1) if dev else None,
-                            "Recommendation":  rec,
-                        }
-
-                        symbols_p = [p["Symbol"] for p in st.session_state.portfolio]
-                        if p_symbol in symbols_p:
-                            st.session_state.portfolio[symbols_p.index(p_symbol)] = position
-                        else:
-                            st.session_state.portfolio.append(position)
-
-                        with st.spinner("Saving portfolio..."):
-                            save_portfolio(
-                                st.session_state.portfolio,
-                                st.session_state.port_sha
-                            )
-                        st.success(f"✅ {name} added!")
+                    with st.spinner("Saving portfolio..."):
+                        save_portfolio(
+                            st.session_state.portfolio,
+                            st.session_state.port_sha
+                        )
+                    st.success(f"✅ {name} added!")
             else:
                 st.warning("Please select a stock, enter purchase price and number of shares.")
 
