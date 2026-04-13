@@ -119,6 +119,17 @@ VALUE_UNIVERSE = [
     "7203.T","6758.T","9432.T","8306.T","4502.T",
 ]
 
+# Traditional banks and insurers where DCF truly doesn't apply
+DCF_EXEMPT = {
+    "JPM","BAC","WFC","C","GS","MS","USB","TFC",
+    "AIG","PRU","MET","AFL","BRK-B",
+}
+
+# Fintech/payments with strong FCF – DCF applies despite "Financial" sector label
+DCF_APPLICABLE = {
+    "PYPL","SQ","V","MA","AXP","COF","DFS","COIN",
+}
+
 # ================================================================
 # HELPER FUNCTIONS
 # ================================================================
@@ -158,10 +169,13 @@ def calculate_wacc(info):
 def calculate_value_score_detail(e):
     details     = {}
     sector      = e.get("sector") or ""
+    symbol      = e.get("symbol") or e.get("Symbol") or ""
     fcf         = e.get("fcf") or 0
     mktcap      = e.get("market_cap") or 0
     div         = e.get("dividend") or 0
-    is_fin      = "Financial" in sector
+    # Financial sector: only true banks/insurers in DCF_EXEMPT skip DCF;
+    # fintech/payments in DCF_APPLICABLE always use DCF regardless of sector label
+    is_fin      = "Financial" in sector and symbol in DCF_EXEMPT and symbol not in DCF_APPLICABLE
     is_util_re  = "Utilities" in sector or "Real Estate" in sector
     has_div     = div > 0
 
