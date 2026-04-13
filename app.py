@@ -1241,22 +1241,45 @@ elif page == "🔄 Batch Analysis":
 
         for i, symbol in enumerate(selection):
             status.text(f"[{i+1}/{len(selection)}] Analyzing {symbol}...")
-            try:
-                result, error = run_dcf(symbol, b_growth, b_terminal, b_mos)
-                if result:
-                    entry   = result_to_db_entry(result)
-                    symbols = [e["Symbol"] for e in st.session_state.database]
-                    if symbol in symbols:
-                        st.session_state.database[symbols.index(symbol)] = entry
-                    else:
-                        st.session_state.database.append(entry)
-                    successes += 1
+            result, error = None, None
+            for attempt, wait_s in enumerate([0, 30, 60]):
+                if wait_s > 0:
+                    status.text(f"[{i+1}/{len(selection)}] Rate limited – waiting {wait_s}s before retry ({symbol})...")
+                    time.sleep(wait_s)
+                    status.text(f"[{i+1}/{len(selection)}] Retrying {symbol} (attempt {attempt+1})...")
+                try:
+                    result, error = run_dcf(symbol, b_growth, b_terminal, b_mos)
+                    rate_limited = error and any(k in str(error).lower() for k in ["429", "too many requests", "rate"])
+                    if rate_limited:
+                        result = None
+                        if attempt < 2:
+                            continue
+                        else:
+                            errors.append(f"{symbol}: rate limited after 3 attempts")
+                            break
+                    break
+                except Exception as ex:
+                    error_str = str(ex)
+                    rate_limited = any(k in error_str.lower() for k in ["429", "too many requests", "rate"])
+                    if rate_limited and attempt < 2:
+                        error = error_str
+                        result = None
+                        continue
+                    errors.append(f"{symbol}: {error_str}")
+                    result = None
+                    break
+            if result:
+                entry   = result_to_db_entry(result)
+                symbols = [e["Symbol"] for e in st.session_state.database]
+                if symbol in symbols:
+                    st.session_state.database[symbols.index(symbol)] = entry
                 else:
-                    errors.append(f"{symbol}: {error}")
-            except Exception as ex:
-                errors.append(f"{symbol}: {str(ex)}")
+                    st.session_state.database.append(entry)
+                successes += 1
+            elif error and not any(symbol in e for e in errors):
+                errors.append(f"{symbol}: {error}")
             progress.progress((i + 1) / len(selection))
-            time.sleep(0.3)
+            time.sleep(2.0)
 
         status.text("Saving to database...")
         with st.spinner("Saving to GitHub..."):
