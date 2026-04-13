@@ -222,5 +222,33 @@
     "Market Cap (Bn)": 52.87,
     "FCF Note": "⚠️ avg of 1 positive years",
     "Last Updated": "2026-04-12 19:40"
+  },
+  {
+    "Symbol": "JPM",
+    "Name": "JPMorgan Chase & Co.",
+    "Sector": "Financial Services",
+    "Price": 311.15,
+    "Intrinsic Value": 776.43,
+    "With MoS": 582.32,
+    "Deviation %": -59.9,
+    "Value Score": 62,
+    "WACC %": 6.12,
+    "FCF Growth %": 2.0,
+    "Terminal %": 3.0,
+    "MoS %": 25.0,
+    "P/E": 15.54,
+    "Forward P/E": 13.31,
+    "P/B": 2.45,
+    "EV/EBITDA": null,
+    "FCF (Bn)": 60.05,
+    "FCF CAGR %": null,
+    "ROE %": 16.13,
+    "Net Margin %": 33.91,
+    "Dividend %": 1.94,
+    "Revenue Growth %": 12.5,
+    "Net Debt (Bn)": -261.72,
+    "Market Cap (Bn)": 839.18,
+    "FCF Note": "⚠️ avg of 2 positive years",
+    "Last Updated": "2026-04-13 18:22"
   }
 ]
