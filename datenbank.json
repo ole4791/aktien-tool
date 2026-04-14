@@ -1706,5 +1706,33 @@
     "Market Cap (Bn)": 45.85,
     "FCF Note": "✅ 3-year average",
     "Last Updated": "2026-04-14 06:34"
+  },
+  {
+    "Symbol": "NVO",
+    "Name": "Novo Nordisk A/S",
+    "Sector": "Healthcare",
+    "Price": 39.31,
+    "Intrinsic Value": 23.52,
+    "With MoS": 17.64,
+    "Deviation %": 67.2,
+    "Value Score": 57,
+    "WACC %": 6.89,
+    "FCF Growth %": -6.3,
+    "Terminal %": 2.0,
+    "MoS %": 25.0,
+    "P/E": 10.92,
+    "Forward P/E": 11.41,
+    "P/B": 5.76,
+    "EV/EBITDA": 1.78,
+    "FCF (Bn)": 8.87,
+    "FCF CAGR %": null,
+    "ROE %": 60.7,
+    "Net Margin %": 33.14,
+    "Dividend %": 4.74,
+    "Revenue Growth %": 20.4,
+    "Net Debt (Bn)": 16.42,
+    "Market Cap (Bn)": 175.04,
+    "FCF Note": "✅ 3-year average",
+    "Last Updated": "2026-04-14 20:07"
   }
 ]
