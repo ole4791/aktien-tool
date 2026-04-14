@@ -150,20 +150,77 @@ def calculate_fcf_base(cashflow):
         return float(fcf), "✅ 3-year average", fcf_values, fcf_years
 
 
+_rfr_cache: dict = {}
+
+def get_risk_free_rate():
+    """Live 10Y Treasury yield via ^TNX, cached for 1 hour."""
+    now = datetime.now()
+    if _rfr_cache.get("fetched_at") and (now - _rfr_cache["fetched_at"]).seconds < 3600:
+        return _rfr_cache["rate"], _rfr_cache["live"], _rfr_cache["fetched_at"]
+    try:
+        rate = yf.Ticker("^TNX").info.get("regularMarketPrice", None)
+        if rate and 0.5 < rate < 20:
+            result = rate / 100
+            _rfr_cache.update({"rate": result, "live": True, "fetched_at": now})
+            return result, True, now
+    except Exception:
+        pass
+    _rfr_cache.update({"rate": 0.04, "live": False, "fetched_at": now})
+    return 0.04, False, now
+
+
+def blume_adjusted_beta(raw_beta):
+    """Blume adjustment: mean reversion toward 1.0"""
+    if not raw_beta:
+        return 1.0
+    return round(0.67 * raw_beta + 0.33 * 1.0, 4)
+
+
+def get_equity_risk_premium(country):
+    """ERP by region – based on Damodaran averages."""
+    erp_map = {
+        "United States": 0.055,
+        "Germany":        0.060,
+        "Switzerland":    0.058,
+        "United Kingdom": 0.060,
+        "France":         0.062,
+        "Netherlands":    0.059,
+        "Japan":          0.065,
+    }
+    return erp_map.get(country, 0.060)  # default 6% for unknown regions
+
+
 def calculate_wacc(info):
-    beta       = float(info.get("beta") or 1.0)
+    raw_beta   = float(info.get("beta") or 1.0)
+    adj_beta   = blume_adjusted_beta(raw_beta)
+    country    = info.get("country") or "United States"
+    rfr, rfr_live, rfr_date = get_risk_free_rate()
+    erp        = get_equity_risk_premium(country)
     debt       = float(info.get("totalDebt") or 0)
     mktcap     = float(info.get("marketCap") or 0)
     interest   = float(info.get("interestExpense") or 0)
     tax        = float(info.get("effectiveTaxRate") or 0.21)
-    cost_eq    = 0.04 + beta * 0.055
+    cost_eq    = rfr + adj_beta * erp
     cost_debt  = abs(interest) / debt if debt > 0 and interest else 0.04
     cost_debt_at = cost_debt * (1 - tax)
     total      = mktcap + debt
     eq_weight  = mktcap / total if total > 0 else 1.0
-    debt_weight = debt / total if total > 0 else 0.0
+    debt_weight = debt  / total if total > 0 else 0.0
     wacc       = eq_weight * cost_eq + debt_weight * cost_debt_at
-    return wacc, beta, cost_eq, cost_debt_at, eq_weight, debt_weight
+    return {
+        "wacc":        wacc,
+        "raw_beta":    raw_beta,
+        "adj_beta":    adj_beta,
+        "cost_eq":     cost_eq,
+        "cost_debt_at": cost_debt_at,
+        "eq_weight":   eq_weight,
+        "debt_weight": debt_weight,
+        "rfr":         rfr,
+        "rfr_live":    rfr_live,
+        "rfr_date":    rfr_date.strftime("%Y-%m-%d"),
+        "erp":         erp,
+        "country":     country,
+    }
 
 
 def calculate_value_score_detail(e):
@@ -394,7 +451,13 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     net_debt = debt - cash
     mktcap   = float(info.get("marketCap") or 0)
 
-    wacc_calc, beta, cost_eq, cost_debt, eq_w, debt_w = calculate_wacc(info)
+    wc         = calculate_wacc(info)
+    wacc_calc  = wc["wacc"]
+    beta       = wc["adj_beta"]
+    cost_eq    = wc["cost_eq"]
+    cost_debt  = wc["cost_debt_at"]
+    eq_w       = wc["eq_weight"]
+    debt_w     = wc["debt_weight"]
     wacc = wacc_override if wacc_override else wacc_calc
 
     if wacc <= terminal:
@@ -470,6 +533,13 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
         "wacc":               round(wacc * 100, 2),
         "wacc_calculated":    round(wacc_calc * 100, 2),
         "beta":               round(beta, 2),
+        "raw_beta":           round(wc["raw_beta"], 2),
+        "adj_beta":           round(wc["adj_beta"], 2),
+        "rfr":                round(wc["rfr"] * 100, 2),
+        "rfr_live":           wc["rfr_live"],
+        "rfr_date":           wc["rfr_date"],
+        "erp":                round(wc["erp"] * 100, 2),
+        "country":            wc["country"],
         "cost_equity":        round(cost_eq * 100, 2),
         "cost_debt":          round(cost_debt * 100, 2),
         "equity_weight":      round(eq_w * 100, 1),
@@ -986,17 +1056,29 @@ elif page == "🔍 Analysis":
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("**Cost of Equity (CAPM)**")
-                st.write("Risk-free rate: 4.0%")
-                st.write(f"Beta: {r['beta']}")
-                st.write("Market risk premium: 5.5%")
-                st.write(f"Cost of equity: {r['cost_equity']}%")
+                rfr_label = (f"{r.get('rfr', 4.0):.2f}% "
+                             f"({'live' if r.get('rfr_live') else 'fallback'}, "
+                             f"fetched {r.get('rfr_date', 'N/A')})")
+                st.write(f"Risk-free rate: {rfr_label}")
+                st.write(f"Country / Region: {r.get('country', 'N/A')}")
+                st.write(f"Equity Risk Premium (ERP): {r.get('erp', 5.5):.2f}%")
+                st.write(f"Raw Beta: {r.get('raw_beta', r['beta']):.2f}")
+                adj = r.get('adj_beta', r['beta'])
+                raw = r.get('raw_beta', r['beta'])
+                st.write(f"Blume-Adjusted Beta: {adj:.2f}  "
+                         f"(0.67 × {raw:.2f} + 0.33)")
+                st.write(f"**Cost of Equity: {r['cost_equity']:.2f}%**  "
+                         f"({r.get('rfr', 4.0):.2f}% + {adj:.2f} × {r.get('erp', 5.5):.2f}%)")
             with col2:
                 st.markdown("**Weighting & Result**")
                 st.write(f"Equity weight: {r['equity_weight']}%")
                 st.write(f"Debt weight: {r['debt_weight']}%")
                 st.write(f"After-tax cost of debt: {r['cost_debt']}%")
                 st.write(f"**WACC (calculated): {r['wacc_calculated']}%**")
-                st.write(f"**WACC (used): {r['wacc']}%**")
+                if r['wacc'] != r['wacc_calculated']:
+                    st.write(f"**WACC (manual override): {r['wacc']}%**")
+                else:
+                    st.write(f"**WACC (used): {r['wacc']}%**")
 
         with tab5:
             st.markdown("**Historical Analysis – 10 Years**")
