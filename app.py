@@ -1052,7 +1052,9 @@ elif page == "🔍 Analysis":
                         "Sum of discounted FCFs (10Y)",
                         "Terminal Value (discounted)",
                         "= Enterprise Value",
-                        "– Net Debt",
+                        "  Gross Debt",
+                        "  – Cash & Equivalents",
+                        "  = Net Debt",
                         "= Equity Value",
                         "÷ Shares Outstanding",
                         "= Intrinsic Value per Share",
@@ -1063,15 +1065,49 @@ elif page == "🔍 Analysis":
                         f"${r['sum_discounted']}B",
                         f"${r['terminal_value']}B",
                         f"${total:.2f}B",
-                        f"${r['net_debt']}B",
+                        f"${r['total_debt']:.2f}B",
+                        f"${r['cash']:.2f}B",
+                        f"${r['net_debt']:.2f}B",
                         f"${equity_val:.2f}B",
-                        f"{r['shares']}B",
+                        f"{r['shares']:.2f}B",
                         f"${r['intrinsic']:.2f}",
                         f"{r['mos_assumption']:.0f}%",
                         f"${r['with_margin']:.2f}"
                     ]
                 })
                 st.dataframe(calc_df, hide_index=True, use_container_width=True)
+
+            # --- FCF Base Explanation ---
+            st.markdown("**FCF Base Calculation**")
+            fcf_yrs  = r.get("fcf_years", [])
+            fcf_hist = r.get("fcf_history", [])
+            fcf_note = r.get("fcf_note", "")
+            if fcf_yrs and fcf_hist:
+                yr_labels = [str(y)[:4] for y in fcf_yrs]
+                used_n    = 3 if "3-year" in fcf_note else (
+                    int(fcf_note.split("avg of ")[-1].split(" ")[0])
+                    if "avg of" in fcf_note else 1
+                )
+                used_yrs  = yr_labels[:used_n]
+                used_vals = fcf_hist[:used_n]
+                vals_str  = ", ".join(f"${v:.2f}B" for v in used_vals)
+                yr_range  = f"{used_yrs[-1]}–{used_yrs[0]}" if len(used_yrs) > 1 else used_yrs[0]
+                method    = "3-year average" if used_n == 3 else (
+                    f"average of {used_n} positive year{'s' if used_n > 1 else ''}"
+                    if "avg" in fcf_note else "single year (all others negative)"
+                )
+                st.write(
+                    f"{method} ({yr_range}): {vals_str} → **Base FCF: ${r['fcf']:.2f}B**"
+                )
+            if r.get("growth_auto") and r.get("growth_sources"):
+                src_str = " + ".join(
+                    f"{s['name']} {s['value']:+.1f}% (wt {s['weight']}%)"
+                    for s in r["growth_sources"]
+                )
+                st.write(
+                    f"Auto growth rate: **{r['growth_assumption']:.1f}%** "
+                    f"(20% haircut applied)  ·  Sources: {src_str}"
+                )
 
             fig3 = px.bar(
                 x=["Current Price", "Intrinsic Value", "With MoS"],
@@ -1107,6 +1143,45 @@ elif page == "🔍 Analysis":
                     st.warning(w)
             else:
                 st.success("✅ All terminal value checks passed.")
+
+            # --- Sensitivity Table ---
+            st.markdown("**Sensitivity Analysis – Intrinsic Value (Base Scenario)**")
+            _wacc_base = r['wacc'] / 100
+            _g_base    = r['growth_assumption'] / 100
+            _term      = r['terminal_assumption'] / 100
+            _fcf       = r['fcf']
+            _shares    = r['shares']
+            _nd        = r['net_debt']
+            wacc_steps   = [_wacc_base - 0.01, _wacc_base, _wacc_base + 0.01]
+            growth_steps = [_g_base - 0.01,    _g_base,    _g_base + 0.01]
+            sens_rows = []
+            for g in growth_steps:
+                row = []
+                for w in wacc_steps:
+                    iv = _dcf_intrinsic(_fcf, _shares, _nd, g, w, _term)
+                    row.append(round(iv, 2) if iv is not None else None)
+                sens_rows.append(row)
+            w_labels = [f"WACC {w*100:.1f}%" for w in wacc_steps]
+            g_labels = [f"Growth {g*100:.1f}%" for g in growth_steps]
+            sens_df  = pd.DataFrame(sens_rows, index=g_labels, columns=w_labels)
+
+            def _style_sens(df):
+                styles = pd.DataFrame('', index=df.index, columns=df.columns)
+                styles.iloc[1, 1] = 'background-color: #1D9E75; color: white; font-weight: bold'
+                return styles
+
+            styled = (
+                sens_df.style
+                .format(lambda v: f"${v:.2f}" if v is not None else "N/A")
+                .apply(_style_sens, axis=None)
+                .background_gradient(cmap="RdYlGn", axis=None, gmap=sens_df)
+            )
+            st.dataframe(styled, use_container_width=True)
+            st.caption(
+                f"Base scenario (green): WACC {_wacc_base*100:.1f}%, "
+                f"Growth {_g_base*100:.1f}%  ·  "
+                f"Current price: ${r['price']:.2f}"
+            )
 
         with tab4:
             col1, col2 = st.columns(2)
