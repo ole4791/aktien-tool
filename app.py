@@ -146,9 +146,8 @@ def calculate_fcf_base(cashflow):
     fcf_years  = list(fcf_series.index[:5])
     fcf_values = [round(float(v) / 1e9, 2) for v in fcf_series.values[:5]]
 
-    # Pair each year with its raw value, skip NaN
-    year_raw = [(yr, float(v)) for yr, v in zip(fcf_years, fcf_series.values[:5])
-                if v == v]   # NaN check
+    # Pair each year with its raw value, skip NaN (v == v is False for NaN)
+    year_raw = [(yr, float(v)) for yr, v in zip(fcf_years, fcf_series.values[:5]) if v == v]
     positive = [(yr, v) for yr, v in year_raw if v > 0]
 
     if not positive:
@@ -158,20 +157,32 @@ def calculate_fcf_base(cashflow):
         fcf = sum(v for _, v in positive) / len(positive)
         return fcf, f"⚠️ avg of {len(positive)} positive years", fcf_values, fcf_years, []
 
-    median_val = _median([v for _, v in positive])
+    median_val  = _median([v for _, v in positive])
+    recent_raw  = year_raw[0][1]        # most recent year (may be ≤ 0)
+    recent_yr   = str(year_raw[0][0])[:4]
 
-    # Detect outliers: >50% deviation from median
-    outlier_labels = [
-        str(yr)[:4] for yr, v in positive
-        if median_val > 0 and abs(v - median_val) / median_val > 0.50
-    ]
+    if recent_raw > 0 and recent_raw > median_val * 1.5:
+        # Growth stock: most recent FCF well above historical median → best indicator
+        fcf            = recent_raw
+        outlier_labels = []
+        note = (f"✅ most recent year ({recent_yr}) – "
+                f"growth stock ({recent_raw/median_val:.1f}× above median)")
 
-    if outlier_labels:
-        note = f"✅ median of {len(positive)} years (outlier: {', '.join(outlier_labels)})"
+    elif recent_raw > 0 and recent_raw < median_val * 0.5:
+        # Recent year is an anomalous dip → median of all positive years is more reliable
+        fcf            = median_val
+        outlier_labels = [recent_yr]
+        note = (f"✅ median of {len(positive)} years – "
+                f"{recent_yr} is outlier ({recent_raw/median_val:.0%} of median)")
+
     else:
-        note = f"✅ median of {len(positive)} years"
+        # Stable earnings → 3-year average of the most recent 3 positive years
+        top3 = [v for _, v in positive[:3]]
+        fcf  = sum(top3) / 3
+        outlier_labels = []
+        note = "✅ 3-year average (stable earnings)"
 
-    return median_val, note, fcf_values, fcf_years, outlier_labels
+    return fcf, note, fcf_values, fcf_years, outlier_labels
 
 
 _fx_cache: dict = {}
@@ -1167,31 +1178,21 @@ elif page == "🔍 Analysis":
             fcf_hist = r.get("fcf_history", [])
             fcf_note = r.get("fcf_note", "")
             if fcf_yrs and fcf_hist:
-                yr_labels  = [str(y)[:4] for y in fcf_yrs]
-                outliers   = set(r.get("fcf_outliers", []))
-                # Determine how many years are shown (all non-NaN up to 5)
-                used_n = len([v for v in fcf_hist if v is not None])
+                yr_labels = [str(y)[:4] for y in fcf_yrs]
+                outliers  = set(r.get("fcf_outliers", []))
+                used_n    = len([v for v in fcf_hist if v is not None])
                 used_yrs  = yr_labels[:used_n]
                 used_vals = fcf_hist[:used_n]
-                # Mark outlier years
                 val_parts = []
                 for yr, v in zip(used_yrs, used_vals):
-                    if yr in outliers:
-                        val_parts.append(f"~~${v:.2f}B~~ ({yr} outlier)")
-                    else:
-                        val_parts.append(f"${v:.2f}B ({yr})")
-                yr_range = f"{used_yrs[-1]}–{used_yrs[0]}" if len(used_yrs) > 1 else used_yrs[0]
-                if "median" in fcf_note:
-                    method = f"median of {used_n} years"
-                elif "avg of" in fcf_note:
-                    method = f"average of {used_n} positive years"
-                else:
-                    method = "single year (all others negative)"
+                    tag = " ⚠️ outlier" if yr in outliers else ""
+                    val_parts.append(f"${v:.2f}B ({yr}{tag})")
                 st.write(
-                    f"{method} ({yr_range}): {', '.join(val_parts)} → **Base FCF: ${r['fcf']:.2f}B**"
+                    f"Method: **{fcf_note}**  \n"
+                    f"Years: {', '.join(val_parts)} → **Base FCF: ${r['fcf']:.2f}B**"
                 )
                 for oy in r.get("fcf_outliers", []):
-                    st.warning(f"⚠️ FCF outlier detected in {oy} – excluded from average, median used")
+                    st.warning(f"⚠️ FCF outlier in {oy} – median used instead of average")
             if r.get("growth_auto") and r.get("growth_sources"):
                 src_str = " + ".join(
                     f"{s['name']} {s['value']:+.1f}% (wt {s['weight']}%)"
