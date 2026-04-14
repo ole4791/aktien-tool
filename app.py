@@ -343,6 +343,21 @@ def calculate_realistic_growth(symbol, info, cashflow):
     return round(weighted * 0.80, 4)  # 20% conservative haircut
 
 
+def _dcf_intrinsic(fcf, shares, net_debt, growth, wacc, terminal):
+    """Compute intrinsic value per share for one scenario."""
+    if wacc <= terminal or shares == 0:
+        return None
+    current_fcf = fcf
+    discounted  = []
+    for yr in range(1, 11):
+        current_fcf *= (1 + growth)
+        discounted.append(current_fcf / (1 + wacc) ** yr)
+    tv      = current_fcf * (1 + terminal) / (wacc - terminal)
+    tv_disc = tv / (1 + wacc) ** 10
+    equity  = sum(discounted) + tv_disc - net_debt
+    return equity / shares
+
+
 def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_override=None):
     try:
         ticker     = yf.Ticker(symbol)
@@ -408,6 +423,35 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     except:
         pass
 
+    # --- Three-Scenario DCF ---
+    scenario_defs = {
+        "Bear": {"growth": growth * 0.70, "wacc": wacc + 0.01, "terminal": terminal - 0.005, "weight": 0.25},
+        "Base": {"growth": growth,         "wacc": wacc,         "terminal": terminal,         "weight": 0.50},
+        "Bull": {"growth": growth * 1.30,  "wacc": wacc - 0.01,  "terminal": terminal + 0.005, "weight": 0.25},
+    }
+    scenarios = {}
+    for sname, sp in scenario_defs.items():
+        iv = _dcf_intrinsic(fcf, shares, net_debt, sp["growth"], sp["wacc"], sp["terminal"])
+        if iv is not None:
+            dev = (price - iv) / iv * 100 if iv != 0 else 0
+            scenarios[sname] = {
+                "intrinsic":    round(iv, 2),
+                "with_margin":  round(iv * (1 - margin_of_safety), 2),
+                "deviation":    round(dev, 1),
+                "weight":       sp["weight"],
+                "growth_pct":   round(sp["growth"] * 100, 1),
+                "wacc_pct":     round(sp["wacc"] * 100, 2),
+                "terminal_pct": round(sp["terminal"] * 100, 2),
+            }
+    if scenarios:
+        weighted_iv  = sum(s["intrinsic"] * s["weight"] for s in scenarios.values())
+        weighted_mos = weighted_iv * (1 - margin_of_safety)
+        weighted_dev = (price - weighted_iv) / weighted_iv * 100 if weighted_iv != 0 else 0
+    else:
+        weighted_iv  = intrinsic
+        weighted_mos = with_margin
+        weighted_dev = deviation
+
     result = {
         "name":               info.get("longName", symbol),
         "symbol":             symbol,
@@ -445,11 +489,15 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
         "net_margin":         info.get("profitMargins"),
         "dividend":           info.get("dividendYield"),
         "revenue_growth":     round(rev_growth, 1) if rev_growth else None,
-        "growth_assumption":  round(growth * 100, 1),
-        "growth_auto":        growth_auto,
-        "terminal_assumption": round(terminal * 100, 1),
-        "mos_assumption":     round(margin_of_safety * 100, 0),
-        "last_updated":       datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "growth_assumption":    round(growth * 100, 1),
+        "growth_auto":          growth_auto,
+        "terminal_assumption":  round(terminal * 100, 1),
+        "mos_assumption":       round(margin_of_safety * 100, 0),
+        "scenarios":            scenarios,
+        "weighted_intrinsic":   round(weighted_iv, 2),
+        "weighted_with_margin": round(weighted_mos, 2),
+        "weighted_deviation":   round(weighted_dev, 1),
+        "last_updated":         datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
     score, details = calculate_value_score_detail(result)
     result["value_score"]         = score
@@ -722,14 +770,51 @@ elif page == "🔍 Analysis":
         st.subheader(f"{r['name']} ({r['symbol']})")
         st.caption(f"Sector: {r['sector']}  ·  Last updated: {r.get('last_updated','')}")
 
+        # --- Weighted Fair Value (prominent) ---
+        wdev = r.get("weighted_deviation", r["deviation"])
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Current Price",   f"${r['price']:.2f}")
-        col2.metric("Intrinsic Value", f"${r['intrinsic']:.2f}")
-        col3.metric("With MoS",        f"${r['with_margin']:.2f}")
-        dev = r["deviation"]
-        col4.metric("Valuation", f"{dev:+.1f}%",
-                    delta="Overvalued" if dev > 0 else "Undervalued",
+        col1.metric("Current Price",        f"${r['price']:.2f}")
+        col2.metric("Weighted Fair Value",  f"${r.get('weighted_intrinsic', r['intrinsic']):.2f}",
+                    help="Bear×25% + Base×50% + Bull×25%")
+        col3.metric("Weighted Max Buy",     f"${r.get('weighted_with_margin', r['with_margin']):.2f}",
+                    help=f"Weighted fair value minus {r['mos_assumption']:.0f}% margin of safety")
+        col4.metric("Valuation", f"{wdev:+.1f}%",
+                    delta="Overvalued" if wdev > 0 else "Undervalued",
                     delta_color="inverse")
+
+        # --- Three-Scenario Breakdown ---
+        scenarios = r.get("scenarios", {})
+        if scenarios:
+            st.markdown("##### Scenario Analysis")
+            colors = {"Bear": "#E57373", "Base": "#1D9E75", "Bull": "#64B5F6"}
+            scol1, scol2, scol3 = st.columns(3)
+            for scol, (sname, sc) in zip([scol1, scol2, scol3], scenarios.items()):
+                dev_sign = f"{sc['deviation']:+.1f}%"
+                label    = "Undervalued" if sc["deviation"] < 0 else "Overvalued"
+                scol.metric(
+                    f"{'🐻' if sname=='Bear' else '📊' if sname=='Base' else '🐂'} {sname}  (weight {int(sc['weight']*100)}%)",
+                    f"${sc['intrinsic']:.2f}",
+                    delta=f"{dev_sign} · {label}",
+                    delta_color="normal" if sc["deviation"] < 0 else "inverse"
+                )
+                scol.caption(f"Growth {sc['growth_pct']:.1f}% · WACC {sc['wacc_pct']:.2f}% · Terminal {sc['terminal_pct']:.2f}%")
+
+            fig_sc = go.Figure()
+            fig_sc.add_trace(go.Bar(
+                x=list(scenarios.keys()) + ["Weighted"],
+                y=[s["intrinsic"] for s in scenarios.values()] + [r.get("weighted_intrinsic", r["intrinsic"])],
+                marker_color=[colors.get(n, "#888") for n in scenarios.keys()] + ["#FFA726"],
+                text=[f"${v:.2f}" for v in [s["intrinsic"] for s in scenarios.values()] + [r.get("weighted_intrinsic", r["intrinsic"])]],
+                textposition="outside",
+            ))
+            fig_sc.add_hline(y=r["price"], line_dash="dash", line_color="#378ADD",
+                             annotation_text=f"Current Price ${r['price']:.2f}")
+            fig_sc.update_layout(
+                title="Intrinsic Value by Scenario", height=320,
+                yaxis_title="Intrinsic Value ($)", showlegend=False,
+                margin=dict(t=50, b=20)
+            )
+            st.plotly_chart(fig_sc, use_container_width=True)
 
         st.divider()
         show_value_score(r)
