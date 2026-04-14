@@ -133,21 +133,45 @@ DCF_APPLICABLE = {
 # ================================================================
 # HELPER FUNCTIONS
 # ================================================================
+def _median(values):
+    s = sorted(values)
+    n = len(s)
+    return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+
+
 def calculate_fcf_base(cashflow):
     if "Free Cash Flow" not in cashflow.index:
-        return None, "not available", [], []
+        return None, "not available", [], [], []
     fcf_series = cashflow.loc["Free Cash Flow"]
     fcf_years  = list(fcf_series.index[:5])
-    fcf_values = [round(float(v)/1e9, 2) for v in fcf_series.values[:5]]
-    positive   = [v for v in fcf_series.values[:5] if v > 0]
+    fcf_values = [round(float(v) / 1e9, 2) for v in fcf_series.values[:5]]
+
+    # Pair each year with its raw value, skip NaN
+    year_raw = [(yr, float(v)) for yr, v in zip(fcf_years, fcf_series.values[:5])
+                if v == v]   # NaN check
+    positive = [(yr, v) for yr, v in year_raw if v > 0]
+
     if not positive:
-        return float(fcf_series.values[0]), "⚠️ all negative", fcf_values, fcf_years
-    elif len(positive) < 3:
-        fcf = sum(positive) / len(positive)
-        return fcf, f"⚠️ avg of {len(positive)} positive years", fcf_values, fcf_years
+        return float(fcf_series.values[0]), "⚠️ all negative", fcf_values, fcf_years, []
+
+    if len(positive) < 3:
+        fcf = sum(v for _, v in positive) / len(positive)
+        return fcf, f"⚠️ avg of {len(positive)} positive years", fcf_values, fcf_years, []
+
+    median_val = _median([v for _, v in positive])
+
+    # Detect outliers: >50% deviation from median
+    outlier_labels = [
+        str(yr)[:4] for yr, v in positive
+        if median_val > 0 and abs(v - median_val) / median_val > 0.50
+    ]
+
+    if outlier_labels:
+        note = f"✅ median of {len(positive)} years (outlier: {', '.join(outlier_labels)})"
     else:
-        fcf = sum(fcf_series.values[:3]) / 3
-        return float(fcf), "✅ 3-year average", fcf_values, fcf_years
+        note = f"✅ median of {len(positive)} years"
+
+    return median_val, note, fcf_values, fcf_years, outlier_labels
 
 
 _fx_cache: dict = {}
@@ -391,17 +415,28 @@ def calculate_realistic_growth(symbol, info, cashflow):
     """Returns (rate, sources) where sources is a list of dicts with name/value/weight."""
     rates, weights, sources = [], [], []
 
-    # Source 1: Historical FCF CAGR (50% weight)
+    # Source 1: Historical FCF CAGR (50% weight) – outlier-aware
     try:
         if "Free Cash Flow" in cashflow.index:
-            fcf_values = cashflow.loc["Free Cash Flow"].values
-            positive   = [float(v) for v in fcf_values[:5] if v and float(v) > 0]
-            if len(positive) >= 3:
-                cagr = (positive[0] / positive[-1]) ** (1 / (len(positive) - 1)) - 1
-                cagr = max(-0.10, min(0.25, cagr))
-                rates.append(cagr)
-                weights.append(0.50)
-                sources.append({"name": "Historical FCF CAGR", "value": round(cagr * 100, 1), "weight": 50})
+            raw = cashflow.loc["Free Cash Flow"].values
+            # (position_index, value) for positive non-NaN entries; index 0 = most recent
+            year_vals = [(i, float(v)) for i, v in enumerate(raw[:5])
+                         if v == v and float(v) > 0]
+            if len(year_vals) >= 3:
+                median_v = _median([v for _, v in year_vals])
+                # Exclude years deviating >50% from median
+                clean = [(i, v) for i, v in year_vals
+                         if median_v > 0 and abs(v - median_v) / median_v <= 0.50]
+                if len(clean) >= 2:
+                    start_i, start_v = clean[0]   # most recent clean year
+                    end_i,   end_v   = clean[-1]   # oldest clean year
+                    n_yrs = end_i - start_i
+                    if n_yrs > 0 and end_v > 0:
+                        cagr = (start_v / end_v) ** (1 / n_yrs) - 1
+                        cagr = max(-0.10, min(0.25, cagr))
+                        rates.append(cagr)
+                        weights.append(0.50)
+                        sources.append({"name": "Historical FCF CAGR", "value": round(cagr * 100, 1), "weight": 50})
     except Exception:
         pass
 
@@ -482,7 +517,7 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     if not info or not info.get("longName"):
         return None, "Stock not found"
 
-    fcf, fcf_note, fcf_history, fcf_years = calculate_fcf_base(cashflow)
+    fcf, fcf_note, fcf_history, fcf_years, fcf_outliers = calculate_fcf_base(cashflow)
     if fcf is None:
         return None, "Free Cash Flow not available"
 
@@ -612,6 +647,7 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
         "equity_weight":      round(eq_w * 100, 1),
         "debt_weight":        round(debt_w * 100, 1),
         "fcf_note":           fcf_note,
+        "fcf_outliers":       fcf_outliers,
         "fcf":                round(fcf / 1e9, 2),
         "fcf_history":        fcf_history,
         "fcf_years":          [str(y)[:10] for y in fcf_years],
@@ -1036,6 +1072,8 @@ elif page == "🔍 Analysis":
                 st.markdown("**Historical FCF**")
                 st.write(f"FCF Base (used): ${r['fcf']}B")
                 st.write(f"Quality: {r['fcf_note']}")
+                for oy in r.get("fcf_outliers", []):
+                    st.warning(f"⚠️ FCF outlier detected in {oy} – median used instead of average")
                 st.write(f"FCF CAGR: {r['fcf_cagr']:.1f}%" if r.get('fcf_cagr') else "FCF CAGR: N/A")
                 if r.get('fcf_history'):
                     fcf_df = pd.DataFrame({
@@ -1129,22 +1167,31 @@ elif page == "🔍 Analysis":
             fcf_hist = r.get("fcf_history", [])
             fcf_note = r.get("fcf_note", "")
             if fcf_yrs and fcf_hist:
-                yr_labels = [str(y)[:4] for y in fcf_yrs]
-                used_n    = 3 if "3-year" in fcf_note else (
-                    int(fcf_note.split("avg of ")[-1].split(" ")[0])
-                    if "avg of" in fcf_note else 1
-                )
+                yr_labels  = [str(y)[:4] for y in fcf_yrs]
+                outliers   = set(r.get("fcf_outliers", []))
+                # Determine how many years are shown (all non-NaN up to 5)
+                used_n = len([v for v in fcf_hist if v is not None])
                 used_yrs  = yr_labels[:used_n]
                 used_vals = fcf_hist[:used_n]
-                vals_str  = ", ".join(f"${v:.2f}B" for v in used_vals)
-                yr_range  = f"{used_yrs[-1]}–{used_yrs[0]}" if len(used_yrs) > 1 else used_yrs[0]
-                method    = "3-year average" if used_n == 3 else (
-                    f"average of {used_n} positive year{'s' if used_n > 1 else ''}"
-                    if "avg" in fcf_note else "single year (all others negative)"
-                )
+                # Mark outlier years
+                val_parts = []
+                for yr, v in zip(used_yrs, used_vals):
+                    if yr in outliers:
+                        val_parts.append(f"~~${v:.2f}B~~ ({yr} outlier)")
+                    else:
+                        val_parts.append(f"${v:.2f}B ({yr})")
+                yr_range = f"{used_yrs[-1]}–{used_yrs[0]}" if len(used_yrs) > 1 else used_yrs[0]
+                if "median" in fcf_note:
+                    method = f"median of {used_n} years"
+                elif "avg of" in fcf_note:
+                    method = f"average of {used_n} positive years"
+                else:
+                    method = "single year (all others negative)"
                 st.write(
-                    f"{method} ({yr_range}): {vals_str} → **Base FCF: ${r['fcf']:.2f}B**"
+                    f"{method} ({yr_range}): {', '.join(val_parts)} → **Base FCF: ${r['fcf']:.2f}B**"
                 )
+                for oy in r.get("fcf_outliers", []):
+                    st.warning(f"⚠️ FCF outlier detected in {oy} – excluded from average, median used")
             if r.get("growth_auto") and r.get("growth_sources"):
                 src_str = " + ".join(
                     f"{s['name']} {s['value']:+.1f}% (wt {s['weight']}%)"
