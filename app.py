@@ -309,7 +309,8 @@ SECTOR_DEFAULTS = {
 }
 
 def calculate_realistic_growth(symbol, info, cashflow):
-    rates, weights = [], []
+    """Returns (rate, sources) where sources is a list of dicts with name/value/weight."""
+    rates, weights, sources = [], [], []
 
     # Source 1: Historical FCF CAGR (50% weight)
     try:
@@ -321,6 +322,7 @@ def calculate_realistic_growth(symbol, info, cashflow):
                 cagr = max(-0.10, min(0.25, cagr))
                 rates.append(cagr)
                 weights.append(0.50)
+                sources.append({"name": "Historical FCF CAGR", "value": round(cagr * 100, 1), "weight": 50})
     except Exception:
         pass
 
@@ -329,18 +331,22 @@ def calculate_realistic_growth(symbol, info, cashflow):
     if earnings_growth and -0.30 < earnings_growth < 0.50:
         rates.append(earnings_growth)
         weights.append(0.30)
+        sources.append({"name": "Analyst EPS estimate", "value": round(earnings_growth * 100, 1), "weight": 30})
 
     # Source 3: Revenue growth as proxy (20% weight)
     rev_growth = info.get("revenueGrowth")
     if rev_growth and -0.20 < rev_growth < 0.40:
         rates.append(rev_growth)
         weights.append(0.20)
+        sources.append({"name": "Revenue growth proxy", "value": round(rev_growth * 100, 1), "weight": 20})
 
     if not rates:
-        return SECTOR_DEFAULTS.get(info.get("sector", ""), 0.05)
+        fallback = SECTOR_DEFAULTS.get(info.get("sector", ""), 0.05)
+        sector   = info.get("sector", "unknown sector")
+        return fallback, [{"name": f"Sector default ({sector})", "value": round(fallback * 100, 1), "weight": 100}]
 
     weighted = sum(r * w for r, w in zip(rates, weights)) / sum(weights)
-    return round(weighted * 0.80, 4)  # 20% conservative haircut
+    return round(weighted * 0.80, 4), sources  # 20% conservative haircut
 
 
 def _dcf_intrinsic(fcf, shares, net_debt, growth, wacc, terminal):
@@ -378,9 +384,10 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     if not shares:
         return None, "Shares outstanding not available"
 
-    growth_auto = growth is None
+    growth_auto    = growth is None
+    growth_sources = []
     if growth_auto:
-        growth = calculate_realistic_growth(symbol, info, cashflow)
+        growth, growth_sources = calculate_realistic_growth(symbol, info, cashflow)
 
     debt     = float(info.get("totalDebt") or 0)
     cash     = float(info.get("totalCash") or 0)
@@ -491,6 +498,7 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
         "revenue_growth":     round(rev_growth, 1) if rev_growth else None,
         "growth_assumption":    round(growth * 100, 1),
         "growth_auto":          growth_auto,
+        "growth_sources":       growth_sources,
         "terminal_assumption":  round(terminal * 100, 1),
         "mos_assumption":       round(margin_of_safety * 100, 0),
         "scenarios":            scenarios,
@@ -738,12 +746,18 @@ elif page == "🔍 Analysis":
 
     st.divider()
     st.subheader("Assumptions")
-    col1, col2, col3 = st.columns(3)
+
+    # FCF Growth: auto-calculated by default, manual slider as override
+    auto_growth = st.checkbox("Auto-calculate FCF growth rate (recommended)", value=True)
+    growth = None  # signals run_dcf() to use calculate_realistic_growth()
+    if not auto_growth:
+        last_auto = st.session_state.get("last_auto_growth_pct", 8)
+        growth = st.slider("FCF Growth % (manual override)", -20, 30, last_auto) / 100
+
+    col1, col2 = st.columns(2)
     with col1:
-        growth = st.slider("FCF Growth %", -20, 30, 8) / 100
-    with col2:
         terminal = st.slider("Terminal Growth %", 0, 6, 3) / 100
-    with col3:
+    with col2:
         mos = st.slider("Margin of Safety %", 0, 50, 25) / 100
 
     wacc_mode = st.radio("WACC", ["Automatic", "Manual"], horizontal=True)
@@ -757,6 +771,8 @@ elif page == "🔍 Analysis":
                 result, error = run_dcf(
                     selected_symbol, growth, terminal, mos, wacc_override
                 )
+            if result:
+                st.session_state["last_auto_growth_pct"] = int(round(result["growth_assumption"]))
             if error:
                 st.error(f"Error: {error}")
             else:
@@ -769,6 +785,20 @@ elif page == "🔍 Analysis":
         st.divider()
         st.subheader(f"{r['name']} ({r['symbol']})")
         st.caption(f"Sector: {r['sector']}  ·  Last updated: {r.get('last_updated','')}")
+
+        # --- Growth rate info banner ---
+        if r.get("growth_auto") and r.get("growth_sources"):
+            src_parts = " · ".join(
+                f"{s['name']} {s['value']:+.1f}% (weight {s['weight']}%)"
+                for s in r["growth_sources"]
+            )
+            st.info(
+                f"Auto-calculated FCF growth rate: **{r['growth_assumption']:.1f}%** "
+                f"(20% conservative haircut applied)  \n"
+                f"Sources: {src_parts}"
+            )
+        elif not r.get("growth_auto"):
+            st.caption(f"Manual FCF growth rate: {r['growth_assumption']:.1f}%")
 
         # --- Weighted Fair Value (prominent) ---
         wdev = r.get("weighted_deviation", r["deviation"])
