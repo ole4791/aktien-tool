@@ -150,6 +150,28 @@ def calculate_fcf_base(cashflow):
         return float(fcf), "✅ 3-year average", fcf_values, fcf_years
 
 
+_fx_cache: dict = {}
+
+def get_fx_rate(from_ccy, to_ccy):
+    """Fetch live FX rate from_ccy → to_ccy, e.g. DKK → USD. Returns 1.0 on failure."""
+    if from_ccy == to_ccy:
+        return 1.0
+    key = f"{from_ccy}{to_ccy}"
+    now = datetime.now()
+    cached = _fx_cache.get(key)
+    if cached and (now - cached["fetched_at"]).seconds < 3600:
+        return cached["rate"]
+    try:
+        ticker = yf.Ticker(f"{from_ccy}{to_ccy}=X")
+        rate   = ticker.fast_info.get("lastPrice") or ticker.info.get("regularMarketPrice")
+        if rate and 0 < rate < 1e6:
+            _fx_cache[key] = {"rate": float(rate), "fetched_at": now}
+            return float(rate)
+    except Exception:
+        pass
+    return 1.0
+
+
 _rfr_cache: dict = {}
 
 def get_risk_free_rate():
@@ -190,13 +212,13 @@ def get_equity_risk_premium(country):
     return erp_map.get(country, 0.060)  # default 6% for unknown regions
 
 
-def calculate_wacc(info):
+def calculate_wacc(info, debt_fx=1.0):
     raw_beta   = float(info.get("beta") or 1.0)
     adj_beta   = blume_adjusted_beta(raw_beta)
     country    = info.get("country") or "United States"
     rfr, rfr_live, rfr_date = get_risk_free_rate()
     erp        = get_equity_risk_premium(country)
-    debt       = float(info.get("totalDebt") or 0)
+    debt       = float(info.get("totalDebt") or 0) * debt_fx   # convert to trading ccy
     mktcap     = float(info.get("marketCap") or 0)
     interest   = float(info.get("interestExpense") or 0)
     tax        = float(info.get("effectiveTaxRate") or 0.21)
@@ -473,12 +495,24 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     if growth_auto:
         growth, growth_sources = calculate_realistic_growth(symbol, info, cashflow)
 
-    debt     = float(info.get("totalDebt") or 0)
-    cash     = float(info.get("totalCash") or 0)
+    # --- Currency conversion: financials may be in a different currency than the stock price ---
+    fin_ccy    = (info.get("financialCurrency") or "").upper()
+    trade_ccy  = (info.get("currency") or "").upper()
+    fx_rate        = 1.0
+    fx_converted   = False
+    if fin_ccy and trade_ccy and fin_ccy != trade_ccy:
+        fx_rate = get_fx_rate(fin_ccy, trade_ccy)
+        if fx_rate != 1.0:
+            fcf          *= fx_rate
+            fcf_history   = [round(v * fx_rate, 2) for v in fcf_history]
+            fx_converted  = True
+
+    debt     = float(info.get("totalDebt") or 0) * fx_rate
+    cash     = float(info.get("totalCash") or 0) * fx_rate
     net_debt = debt - cash
     mktcap   = float(info.get("marketCap") or 0)
 
-    wc         = calculate_wacc(info)
+    wc         = calculate_wacc(info, debt_fx=fx_rate)
     wacc_calc  = wc["wacc"]
     beta       = wc["adj_beta"]
     cost_eq    = wc["cost_eq"]
@@ -507,7 +541,7 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     price      = float(info.get("currentPrice") or 0)
     deviation  = (price - intrinsic) / intrinsic * 100 if intrinsic != 0 else 0
 
-    ebitda_raw = float(info.get("ebitda") or 0)
+    ebitda_raw = float(info.get("ebitda") or 0) * fx_rate
     tv_pct     = tv_disc / enterprise * 100 if enterprise != 0 else 0
     tv_warnings, tv_implied_multiple = check_terminal_value(
         tv_disc / 1e9, ebitda_raw / 1e9, wacc, terminal
@@ -604,6 +638,10 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
         "growth_sources":       growth_sources,
         "terminal_assumption":  round(terminal * 100, 1),
         "mos_assumption":       round(margin_of_safety * 100, 0),
+        "fx_converted":         fx_converted,
+        "fx_from":              fin_ccy if fx_converted else None,
+        "fx_to":                trade_ccy if fx_converted else None,
+        "fx_rate":              round(fx_rate, 6) if fx_converted else None,
         "tv_pct":               round(tv_pct, 1),
         "tv_implied_multiple":  round(tv_implied_multiple, 1) if tv_implied_multiple else None,
         "tv_warnings":          tv_warnings,
@@ -891,6 +929,14 @@ elif page == "🔍 Analysis":
         st.divider()
         st.subheader(f"{r['name']} ({r['symbol']})")
         st.caption(f"Sector: {r['sector']}  ·  Last updated: {r.get('last_updated','')}")
+
+        # --- FX conversion warning ---
+        if r.get("fx_converted"):
+            st.warning(
+                f"⚠️ Currency conversion applied: FCF and balance sheet reported in "
+                f"**{r['fx_from']}**, stock trades in **{r['fx_to']}**.  \n"
+                f"All financial values converted at **1 {r['fx_from']} = {r['fx_rate']:.4f} {r['fx_to']}**."
+            )
 
         # --- Growth rate info banner ---
         if r.get("growth_auto") and r.get("growth_sources"):
