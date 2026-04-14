@@ -119,6 +119,55 @@ VALUE_UNIVERSE = [
     "7203.T","6758.T","9432.T","8306.T","4502.T",
 ]
 
+INDEX_GROUPS = {
+    "⭐ Featured Stocks": [
+        "NVDA","TSLA","UNH","NVO","PYPL","CEG","DTE.DE","BABA","JD","IRDM",
+    ],
+    "🇺🇸 S&P 500 – Consumer": [
+        "KO","PEP","PG","CL","GIS","K","MKC","SJM","CAG","HRL",
+        "MCD","YUM","DPZ","CMG","WMT","COST","TGT","KR","SYY","MO",
+    ],
+    "🇺🇸 S&P 500 – Healthcare": [
+        "JNJ","ABT","MDT","SYK","BSX","BDX","ZBH","EW","ISRG","RMD",
+        "PFE","MRK","LLY","ABBV","BMY","AMGN","GILD","BIIB","REGN","VRTX",
+        "CVS","UNH","HUM","CI","ELV","MCK","CAH","ABC","MOH","CNC",
+    ],
+    "🇺🇸 S&P 500 – Industrials": [
+        "MMM","HON","GE","CAT","DE","EMR","ITW","ETN","PH","ROK",
+        "DOV","AME","FTV","XYL","GNRC","ROP","IDEX","IR","TT","CARR",
+        "UPS","FDX","CSX","NSC","UNP","WAB","EXPD","CHRW","JBHT","ODFL",
+    ],
+    "🇺🇸 S&P 500 – Technology": [
+        "AAPL","MSFT","CSCO","IBM","ORCL","TXN","QCOM","ADI","KLAC","LRCX",
+        "AMAT","MSI","CTSH","ACN","INTU","PAYX","ADP","FISV","FIS","GPN",
+    ],
+    "🇺🇸 S&P 500 – Financials": [
+        "BRK-B","JPM","BAC","WFC","USB","TFC","PNC","MTB","CFG","FITB",
+        "AXP","V","MA","DFS","COF","SYF","AIG","PRU","MET","AFL",
+        "BLK","TROW","BEN","IVZ","AMG","WTW","AON","MMC","CB","TRV",
+    ],
+    "🇺🇸 S&P 500 – Energy & Utilities": [
+        "XOM","CVX","COP","SLB","HAL","BKR","PSX","VLO","MPC","PXD",
+        "EOG","DVN","MRO","OXY","HES","EQT",
+        "NEE","DUK","SO","D","AEP","EXC","SRE","XEL","ES","ETR",
+        "AMT","PLD","CCI","EQIX","PSA","O","SPG","WELL","AVB","EQR",
+    ],
+    "🇩🇪 DAX": [
+        "SAP.DE","SIE.DE","ALV.DE","MUV2.DE","BMW.DE","MBG.DE","VOW3.DE",
+        "BAS.DE","BAYN.DE","DBK.DE","DTE.DE","RWE.DE","HEN3.DE","ADS.DE","IFX.DE",
+    ],
+    "🌍 Europe": [
+        "SHEL.L","BP.L","HSBA.L","AZN.L","GSK.L","ULVR.L","DGE.L","BATS.L",
+        "NESN.SW","NOVN.SW","ROG.SW","ZURN.SW","ABBN.SW",
+        "ASML.AS","INGA.AS","PHIA.AS","HEIA.AS",
+        "OR.PA","TTE.PA","SAN.PA","BNP.PA","AIR.PA","MC.PA",
+    ],
+    "🌏 Asia": [
+        "7203.T","6758.T","9432.T","8306.T","4502.T",
+    ],
+    "🌐 Full Universe": VALUE_UNIVERSE,
+}
+
 # Traditional banks and insurers where DCF truly doesn't apply
 DCF_EXEMPT = {
     "JPM","BAC","WFC","C","GS","MS","USB","TFC",
@@ -852,22 +901,21 @@ if page == "🏠 Dashboard":
         col1.metric("Stocks Analyzed", len(df))
         underval = len(df[df["Deviation %"] < 0]) if "Deviation %" in df.columns else 0
         col2.metric("Undervalued", underval)
-        top_score = df["Value Score"].max() if "Value Score" in df.columns else 0
-        col3.metric("Highest Value Score", f"{top_score}/100")
-        avg_score = round(df["Value Score"].mean(), 1) if "Value Score" in df.columns else 0
-        col4.metric("Avg Value Score", f"{avg_score}/100")
+        most_under = df.loc[df["Deviation %"].idxmin(), "Symbol"] if "Deviation %" in df.columns else "–"
+        col3.metric("Most Undervalued", most_under)
+        avg_dev = round(df["Deviation %"].mean(), 1) if "Deviation %" in df.columns else 0
+        col4.metric("Avg Deviation", f"{avg_dev:+.1f}%")
 
         st.divider()
         st.subheader("🏆 Top 10 Buy Opportunities")
-        st.caption("Ranked by Value Score – highest score = strongest buy signals")
+        st.caption("Ranked by deviation from intrinsic value – most undervalued first")
 
-        top10 = df.nlargest(10, "Value Score")[
+        top10 = df.nsmallest(10, "Deviation %")[
             ["Symbol","Name","Sector","Price","Intrinsic Value",
-             "Deviation %","Value Score","P/E","FCF CAGR %","Dividend %"]
+             "Deviation %","P/E","FCF CAGR %","Dividend %"]
         ]
         st.dataframe(
             top10.style
-            .background_gradient(subset=["Value Score"], cmap="RdYlGn")
             .background_gradient(subset=["Deviation %"], cmap="RdYlGn_r")
             .format({"Deviation %": "{:+.1f}%", "Price": "${:.2f}",
                      "Intrinsic Value": "${:.2f}", "Dividend %": "{:.2f}%",
@@ -879,12 +927,12 @@ if page == "🏠 Dashboard":
         st.divider()
         col1, col2 = st.columns(2)
         with col1:
-            sector_df = df.groupby("Sector")["Value Score"].mean().reset_index()
-            sector_df = sector_df.sort_values("Value Score", ascending=False)
-            fig = px.bar(sector_df, x="Sector", y="Value Score",
-                         title="Avg Value Score by Sector",
-                         color="Value Score",
-                         color_continuous_scale="RdYlGn")
+            sector_df = df.groupby("Sector")["Deviation %"].mean().reset_index()
+            sector_df = sector_df.sort_values("Deviation %", ascending=True)
+            fig = px.bar(sector_df, x="Sector", y="Deviation %",
+                         title="Avg Deviation % by Sector",
+                         color="Deviation %",
+                         color_continuous_scale="RdYlGn_r")
             fig.update_layout(height=300, xaxis_tickangle=-30)
             st.plotly_chart(fig, use_container_width=True)
         with col2:
@@ -1044,10 +1092,6 @@ elif page == "🔍 Analysis":
                 margin=dict(t=50, b=20)
             )
             st.plotly_chart(fig_sc, use_container_width=True)
-
-        st.divider()
-        show_value_score(r)
-        st.divider()
 
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📊 Key Metrics", "💰 FCF & Cashflows",
@@ -1553,7 +1597,6 @@ elif page == "📊 Database":
         st.caption(f"{len(filtered)} of {len(df)} entries")
         st.dataframe(
             filtered.style
-            .background_gradient(subset=["Value Score"], cmap="RdYlGn")
             .background_gradient(subset=["Deviation %"], cmap="RdYlGn_r")
             .format({"Deviation %": "{:+.1f}%", "Price": "${:.2f}",
                      "Intrinsic Value": "${:.2f}", "With MoS": "${:.2f}",
@@ -1579,11 +1622,12 @@ elif page == "📊 Database":
                 fig.add_hline(y=0, line_dash="dash", line_color="gray")
                 st.plotly_chart(fig, use_container_width=True)
             with col2:
-                top10 = filtered.nlargest(10, "Value Score")
-                fig2  = px.bar(top10, x="Symbol", y="Value Score",
-                               title="Top 10 by Value Score",
-                               color="Value Score",
-                               color_continuous_scale="RdYlGn")
+                top10 = filtered.nsmallest(10, "Deviation %")
+                fig2  = px.bar(top10, x="Symbol", y="Deviation %",
+                               title="Top 10 Most Undervalued",
+                               color="Deviation %",
+                               color_continuous_scale="RdYlGn_r")
+                fig2.add_hline(y=0, line_dash="dash", line_color="gray")
                 st.plotly_chart(fig2, use_container_width=True)
 
         csv = filtered.to_csv(index=False).encode("utf-8")
@@ -1720,11 +1764,13 @@ elif page == "🔄 Batch Analysis":
     with col3:
         b_mos      = st.slider("Margin of Safety %", 0, 40, 25) / 100
 
-    count = st.slider("How many stocks?", 10, len(VALUE_UNIVERSE), 50)
-    st.caption(f"{count} stocks · approx. {count//10}–{count//6} minutes")
+    index_choice = st.selectbox("Select index / group", list(INDEX_GROUPS.keys()))
+    selection_preview = INDEX_GROUPS[index_choice]
+    n = len(selection_preview)
+    st.caption(f"{n} stocks · approx. {n//10}–{n//6} minutes")
 
     if st.button("Start Batch Analysis", type="primary", key="batch_btn"):
-        selection = VALUE_UNIVERSE[:count]
+        selection = selection_preview
         progress  = st.progress(0)
         status    = st.empty()
         errors    = []
