@@ -293,7 +293,57 @@ def calculate_value_score_detail(e):
     return min(score, 100), details
 
 
-def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
+SECTOR_DEFAULTS = {
+    "Technology":             0.10,
+    "Healthcare":             0.07,
+    "Consumer Staples":       0.05,
+    "Consumer Discretionary": 0.07,
+    "Industrials":            0.06,
+    "Energy":                 0.04,
+    "Utilities":              0.03,
+    "Real Estate":            0.04,
+    "Financial Services":     0.05,
+    "Financials":             0.05,
+    "Materials":              0.05,
+    "Communication Services": 0.07,
+}
+
+def calculate_realistic_growth(symbol, info, cashflow):
+    rates, weights = [], []
+
+    # Source 1: Historical FCF CAGR (50% weight)
+    try:
+        if "Free Cash Flow" in cashflow.index:
+            fcf_values = cashflow.loc["Free Cash Flow"].values
+            positive   = [float(v) for v in fcf_values[:5] if v and float(v) > 0]
+            if len(positive) >= 3:
+                cagr = (positive[0] / positive[-1]) ** (1 / (len(positive) - 1)) - 1
+                cagr = max(-0.10, min(0.25, cagr))
+                rates.append(cagr)
+                weights.append(0.50)
+    except Exception:
+        pass
+
+    # Source 2: Analyst EPS growth forecast (30% weight)
+    earnings_growth = info.get("earningsGrowth")
+    if earnings_growth and -0.30 < earnings_growth < 0.50:
+        rates.append(earnings_growth)
+        weights.append(0.30)
+
+    # Source 3: Revenue growth as proxy (20% weight)
+    rev_growth = info.get("revenueGrowth")
+    if rev_growth and -0.20 < rev_growth < 0.40:
+        rates.append(rev_growth)
+        weights.append(0.20)
+
+    if not rates:
+        return SECTOR_DEFAULTS.get(info.get("sector", ""), 0.05)
+
+    weighted = sum(r * w for r, w in zip(rates, weights)) / sum(weights)
+    return round(weighted * 0.80, 4)  # 20% conservative haircut
+
+
+def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_override=None):
     try:
         ticker     = yf.Ticker(symbol)
         info       = ticker.info
@@ -312,6 +362,10 @@ def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
     shares = info.get("sharesOutstanding")
     if not shares:
         return None, "Shares outstanding not available"
+
+    growth_auto = growth is None
+    if growth_auto:
+        growth = calculate_realistic_growth(symbol, info, cashflow)
 
     debt     = float(info.get("totalDebt") or 0)
     cash     = float(info.get("totalCash") or 0)
@@ -392,6 +446,7 @@ def run_dcf(symbol, growth, terminal, margin_of_safety, wacc_override=None):
         "dividend":           info.get("dividendYield"),
         "revenue_growth":     round(rev_growth, 1) if rev_growth else None,
         "growth_assumption":  round(growth * 100, 1),
+        "growth_auto":        growth_auto,
         "terminal_assumption": round(terminal * 100, 1),
         "mos_assumption":     round(margin_of_safety * 100, 0),
         "last_updated":       datetime.now().strftime("%Y-%m-%d %H:%M"),
