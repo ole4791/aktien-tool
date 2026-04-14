@@ -406,6 +406,33 @@ def calculate_realistic_growth(symbol, info, cashflow):
     return round(weighted * 0.80, 4), sources  # 20% conservative haircut
 
 
+def check_terminal_value(tv_disc_bn, ebitda_bn, wacc, terminal_growth):
+    """Plausibility checks for terminal value. Returns (warnings, implied_multiple)."""
+    warnings       = []
+    implied_multiple = None
+
+    if terminal_growth > 0.025:
+        warnings.append(
+            f"⚠️ Terminal growth {terminal_growth*100:.1f}% exceeds long-term GDP growth "
+            f"(~2.5%). Consider reducing."
+        )
+
+    if ebitda_bn and ebitda_bn > 0:
+        implied_multiple = tv_disc_bn / ebitda_bn
+        if implied_multiple > 25:
+            warnings.append(
+                f"⚠️ Terminal Value implies EV/EBITDA of {implied_multiple:.1f}x "
+                f"– historically high. Most sectors trade at 8–15x."
+            )
+        elif implied_multiple < 4:
+            warnings.append(
+                f"⚠️ Terminal Value implies EV/EBITDA of {implied_multiple:.1f}x "
+                f"– very low. Check WACC and growth assumptions."
+            )
+
+    return warnings, implied_multiple
+
+
 def _dcf_intrinsic(fcf, shares, net_debt, growth, wacc, terminal):
     """Compute intrinsic value per share for one scenario."""
     if wacc <= terminal or shares == 0:
@@ -479,6 +506,12 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     with_margin = intrinsic * (1 - margin_of_safety)
     price      = float(info.get("currentPrice") or 0)
     deviation  = (price - intrinsic) / intrinsic * 100 if intrinsic != 0 else 0
+
+    ebitda_raw = float(info.get("ebitda") or 0)
+    tv_pct     = tv_disc / enterprise * 100 if enterprise != 0 else 0
+    tv_warnings, tv_implied_multiple = check_terminal_value(
+        tv_disc / 1e9, ebitda_raw / 1e9, wacc, terminal
+    )
 
     fcf_cagr = None
     if len(fcf_history) >= 2 and fcf_history[-1] > 0 and fcf_history[0] > 0:
@@ -571,6 +604,9 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
         "growth_sources":       growth_sources,
         "terminal_assumption":  round(terminal * 100, 1),
         "mos_assumption":       round(margin_of_safety * 100, 0),
+        "tv_pct":               round(tv_pct, 1),
+        "tv_implied_multiple":  round(tv_implied_multiple, 1) if tv_implied_multiple else None,
+        "tv_warnings":          tv_warnings,
         "scenarios":            scenarios,
         "weighted_intrinsic":   round(weighted_iv, 2),
         "weighted_with_margin": round(weighted_mos, 2),
@@ -1051,6 +1087,26 @@ elif page == "🔍 Analysis":
             )
             fig3.update_layout(showlegend=False, height=300)
             st.plotly_chart(fig3, use_container_width=True)
+
+            # --- Terminal Value Plausibility Check ---
+            st.markdown("**Terminal Value Plausibility**")
+            tv_pct = r.get("tv_pct")
+            tv_mul = r.get("tv_implied_multiple")
+            tv_warn = r.get("tv_warnings", [])
+
+            info_lines = []
+            if tv_pct is not None:
+                info_lines.append(f"TV as % of Enterprise Value: **{tv_pct:.1f}%**")
+            if tv_mul is not None:
+                info_lines.append(f"Implied EV/EBITDA multiple: **{tv_mul:.1f}x**")
+            if info_lines:
+                st.write("  ·  ".join(info_lines))
+
+            if tv_warn:
+                for w in tv_warn:
+                    st.warning(w)
+            else:
+                st.success("✅ All terminal value checks passed.")
 
         with tab4:
             col1, col2 = st.columns(2)
