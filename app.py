@@ -179,6 +179,13 @@ DCF_APPLICABLE = {
     "PYPL","SQ","V","MA","AXP","COF","DFS","COIN",
 }
 
+# Stocks where DCF is not reliable due to volatile/insufficient FCF history
+# Show a strong warning and suggest alternative valuation methods instead
+DCF_UNRELIABLE = {
+    "CEG",    # Constellation Energy – only 1 positive FCF year; nuclear earnings priced in
+    "VWAPY",  # Volkswagen ADR – negative FCF
+}
+
 # ================================================================
 # HELPER FUNCTIONS
 # ================================================================
@@ -529,44 +536,73 @@ def calculate_realistic_growth(symbol, info, cashflow):
     """Returns (rate, sources) where sources is a list of dicts with name/value/weight."""
     rates, weights, sources = [], [], []
 
-    # Source 1: Historical FCF CAGR (50% weight) – outlier-aware
+    # Detect high-growth stock to shift source weights toward analyst estimates
+    earnings_growth = info.get("earningsGrowth")
+    is_high_growth  = bool(earnings_growth and earnings_growth > 0.15)
+    fcf_cagr_weight = 0.30 if is_high_growth else 0.50
+    analyst_weight  = 0.50 if is_high_growth else 0.30
+
+    # Source 1: Historical FCF CAGR – outlier-aware for stable stocks,
+    # full-span for growth stocks whose recent FCF is far above historical median
     try:
         if "Free Cash Flow" in cashflow.index:
             raw = cashflow.loc["Free Cash Flow"].values
-            # (position_index, value) for positive non-NaN entries; index 0 = most recent
             year_vals = [(i, float(v)) for i, v in enumerate(raw[:5])
                          if v == v and float(v) > 0]
             if len(year_vals) >= 3:
                 median_v = _median([v for _, v in year_vals])
-                # Exclude years deviating >50% from median
-                clean = [(i, v) for i, v in year_vals
-                         if median_v > 0 and abs(v - median_v) / median_v <= 0.50]
-                if len(clean) >= 2:
-                    start_i, start_v = clean[0]   # most recent clean year
-                    end_i,   end_v   = clean[-1]   # oldest clean year
-                    n_yrs = end_i - start_i
-                    if n_yrs > 0 and end_v > 0:
-                        cagr = (start_v / end_v) ** (1 / n_yrs) - 1
+                recent_v = year_vals[0][1]   # most recent positive FCF
+
+                if recent_v > median_v * 1.5:
+                    # Growth stock: outlier filter would wrongly discard the recent
+                    # explosive years. Measure CAGR from oldest to newest instead.
+                    oldest_i, oldest_v = year_vals[-1]
+                    n_yrs = oldest_i  # index 0 is most recent, so span = oldest_i years
+                    if n_yrs > 0 and oldest_v > 0:
+                        cagr = (recent_v / oldest_v) ** (1 / n_yrs) - 1
                         cagr = max(-0.10, min(0.25, cagr))
                         rates.append(cagr)
-                        weights.append(0.50)
-                        sources.append({"name": "Historical FCF CAGR", "value": round(cagr * 100, 1), "weight": 50})
+                        weights.append(fcf_cagr_weight)
+                        sources.append({"name": "Historical FCF CAGR (growth span)",
+                                        "value": round(cagr * 100, 1),
+                                        "weight": int(fcf_cagr_weight * 100)})
+                else:
+                    # Stable stock: exclude outlier years and compute CAGR on clean set
+                    clean = [(i, v) for i, v in year_vals
+                             if median_v > 0 and abs(v - median_v) / median_v <= 0.50]
+                    if len(clean) >= 2:
+                        start_i, start_v = clean[0]
+                        end_i,   end_v   = clean[-1]
+                        n_yrs = end_i - start_i
+                        if n_yrs > 0 and end_v > 0:
+                            cagr = (start_v / end_v) ** (1 / n_yrs) - 1
+                            cagr = max(-0.10, min(0.25, cagr))
+                            rates.append(cagr)
+                            weights.append(fcf_cagr_weight)
+                            sources.append({"name": "Historical FCF CAGR",
+                                            "value": round(cagr * 100, 1),
+                                            "weight": int(fcf_cagr_weight * 100)})
     except Exception:
         pass
 
-    # Source 2: Analyst EPS growth forecast (30% weight)
-    earnings_growth = info.get("earningsGrowth")
-    if earnings_growth and -0.30 < earnings_growth < 0.50:
-        rates.append(earnings_growth)
-        weights.append(0.30)
-        sources.append({"name": "Analyst EPS estimate", "value": round(earnings_growth * 100, 1), "weight": 30})
+    # Source 2: Analyst EPS growth forecast – cap at 50% rather than exclude
+    if earnings_growth and earnings_growth > -0.30:
+        eg_used = min(earnings_growth, 0.50)
+        rates.append(eg_used)
+        weights.append(analyst_weight)
+        sources.append({"name": "Analyst EPS estimate",
+                        "value": round(eg_used * 100, 1),
+                        "weight": int(analyst_weight * 100)})
 
-    # Source 3: Revenue growth as proxy (20% weight)
+    # Source 3: Revenue growth as proxy – cap at 40% rather than exclude
     rev_growth = info.get("revenueGrowth")
-    if rev_growth and -0.20 < rev_growth < 0.40:
-        rates.append(rev_growth)
+    if rev_growth and rev_growth > -0.20:
+        rg_used = min(rev_growth, 0.40)
+        rates.append(rg_used)
         weights.append(0.20)
-        sources.append({"name": "Revenue growth proxy", "value": round(rev_growth * 100, 1), "weight": 20})
+        sources.append({"name": "Revenue growth proxy",
+                        "value": round(rg_used * 100, 1),
+                        "weight": 20})
 
     if not rates:
         fallback = SECTOR_DEFAULTS.get(info.get("sector", ""), 0.05)
@@ -699,6 +735,15 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
 
     if not info or not info.get("longName"):
         return None, "Stock not found"
+
+    sym_upper = symbol.upper()
+    if sym_upper in DCF_UNRELIABLE:
+        pe = info.get("trailingPE") or info.get("forwardPE")
+        pe_str = f"{pe:.1f}×" if pe else "N/A"
+        return None, (
+            f"DCF not reliable for {symbol} – highly volatile or insufficient FCF history. "
+            f"Current P/E: {pe_str}. Consider P/E or EV/EBITDA valuation instead."
+        )
 
     fcf, fcf_note, fcf_history, fcf_years, fcf_outliers = calculate_fcf_base(cashflow)
     if fcf is None:
