@@ -1345,6 +1345,12 @@ elif page == "🔍 Analysis":
             st.write(f"[DEBUG] Key starts with: {FMP_API_KEY[:4] if FMP_API_KEY else 'EMPTY'}")
             st.write(f"[DEBUG] Calling FMP for {r['symbol']}")
             if FMP_API_KEY:
+                import requests as _req
+                _test_url = f"https://financialmodelingprep.com/api/v3/discounted-cash-flow/AAPL?apikey={FMP_API_KEY}"
+                _test_r   = _req.get(_test_url, timeout=10)
+                st.write(f"[DEBUG] FMP status: {_test_r.status_code}")
+                st.write(f"[DEBUG] FMP response: {_test_r.text[:300]}")
+            if FMP_API_KEY:
                 with st.spinner("Fetching FMP independent DCF…"):
                     fmp_val, fmp_src = get_fmp_dcf(r["symbol"])
                 validation = validate_dcf(our_base, fmp_val)
