@@ -1,388 +1,395 @@
 # Stock Analysis Tool – Feature Roadmap
 
 ## ✅ Completed Features
-- [x] Basic DCF calculation with WACC
-- [x] Value Score with fair weighting (sector-specific)
+- [x] DCF calculation with WACC (three scenarios Bear/Base/Bull)
+- [x] Weighted fair value (Bear 25% / Base 50% / Bull 25%)
+- [x] Live risk-free rate from ^TNX
+- [x] Blume-adjusted beta (0.67 × raw + 0.33 × 1.0)
+- [x] Regional ERP mapping (USA 5.5%, Europe 6.0%, EM 6.5%)
+- [x] Terminal Value plausibility check (implied EV/EBITDA, TV%)
+- [x] Full transparency of all calculation steps
+- [x] Sensitivity table (WACC ±1% / Growth ±1%)
+- [x] Automatic FCF growth rate per stock (3 sources, 20% haircut)
+- [x] Median FCF base (outlier protection)
+- [x] Currency conversion with reliability indicator
+- [x] Value Score with fair weighting (inapplicable categories skipped)
+- [x] Dividend display bug fixed
+- [x] Decimal places standardized to 2
+- [x] PayPal/Fintech misclassification fixed (DCF_EXEMPT / DCF_APPLICABLE)
+- [x] Rate limiting fix (2s sleep, retry logic)
 - [x] Historical charts (price, P/E, FCF, intrinsic value)
 - [x] Persistent database via GitHub API
 - [x] Portfolio tracking with recommendations
 - [x] Batch analysis with index selection
 - [x] Dashboard with Top 10 opportunities
 - [x] Methodology page with sources
-- [x] English language throughout
-- [x] Search with autocomplete suggestions
-- [x] Dividend display bug fixed
-- [x] Decimal places standardized to 2
-- [x] Value Score fair weighting – inapplicable categories skipped
-- [x] PayPal/Fintech misclassification fixed
-- [x] Automatic FCF growth rate calculation (per stock)
-- [x] Rate limiting fix – 2s sleep, retry logic
+- [x] Search with autocomplete
 
 ---
 
-## 🔴 Priority 0 – DCF Methodology Improvements
-*Oberste Priorität: korrekte Berechnung vor neuen Features*
+## 🔴 Priority 0 – DCF Accuracy Fixes
+*These affect calculation quality for many stocks – fix before adding features*
 
-### 0.1 Three-Scenario DCF – HIGHEST PRIORITY
-**Why:** A single DCF value is misleading. The range shows how sensitive the result is.
-**Data available:** ✅ No new data needed – calculated from existing assumptions
-**Impact:** Largest single improvement to analysis quality
+### 0.1 Negative Equity Fix – CRITICAL
+**Problem:** Stocks with negative book equity (ABBV, CL, MO, MCD, YUM, ITW, HON)
+show wrong intrinsic values because the equity bridge breaks.
+**Root cause:** When totalStockholdersEquity < 0, dividing by shares gives
+a misleading result. The DCF enterprise value is correct but the equity
+conversion fails.
+**Affected stocks:** ABBV ($260 tool vs ~$180 external), CL ($104 vs ~$70),
+MO ($128 vs ~$40), MCD ($173 vs ~$120), ITW ($127 vs ~$260 – opposite direction)
 
-Implementation:
+**Fix:**
 ```python
-scenarios = {
-    "Bear": {
-        "growth":   growth * 0.70,   # -30% vs base
-        "wacc":     wacc + 0.01,     # +100bps
-        "terminal": terminal - 0.005, # -50bps
-        "weight":   0.25
-    },
-    "Base": {
-        "growth":   growth,
-        "wacc":     wacc,
-        "terminal": terminal,
-        "weight":   0.50
-    },
-    "Bull": {
-        "growth":   growth * 1.30,   # +30% vs base
-        "wacc":     wacc - 0.01,     # -100bps
-        "terminal": terminal + 0.005, # +50bps
-        "weight":   0.25
-    }
-}
+# In run_dcf(), after calculating equity value:
+equity = enterprise - net_debt
 
-# Weighted fair value
-weighted_value = sum(
-    run_dcf_single(s["growth"], s["wacc"], s["terminal"]) * s["weight"]
-    for s in scenarios.values()
-)
+# Add check:
+book_equity = info.get("totalStockholdersEquity", 0) or 0
+if book_equity < 0:
+    # Use enterprise value approach directly
+    # Do not subtract net debt twice
+    # Show warning
+    warnings.append("⚠️ Negative book equity – intrinsic value based on 
+    Enterprise Value directly. Treat with caution.")
+    # Cap intrinsic value: cannot be negative
+    intrinsic = max(equity / shares, 0)
 ```
 
-Display in Analysis page:
-- Three columns side by side: Bear | Base | Bull
-- Each shows intrinsic value and deviation from current price
-- Weighted fair value prominently shown
-- Margin of Safety applied to weighted value
-- Bar chart comparing all three scenarios
+**Display:** Show warning banner in Analysis page when negative equity detected.
 
 **Claude Code instruction:**
 Read ROADMAP.md section 0.1 and app.py.
-Implement three-scenario DCF analysis:
+Fix negative equity issue in run_dcf():
 
-Calculate Bear/Base/Bull scenarios as defined in ROADMAP
-Show all three intrinsic values side by side in Analysis page
-Calculate weighted fair value (Bear 25%, Base 50%, Bull 25%)
-Apply Margin of Safety to weighted value
-Add bar chart comparing three scenarios
-Keep existing single-value calculation as "Base Case"
+Detect when totalStockholdersEquity < 0
+Show warning: "Negative book equity detected – valuation less reliable"
+Ensure intrinsic value cannot go negative
+Test with ABBV, MO, MCD after fix
 Commit and push. Do nothing else.
 
 
-### 0.2 Live Risk-Free Rate + Blume-Adjusted Beta
-**Why:** Current WACC uses fixed 4.0% risk-free rate and raw beta – both imprecise
-**Data available:**
-- ✅ Live 10Y Treasury yield: `yf.Ticker("^TNX").info["regularMarketPrice"]`
-- ✅ Raw beta: `info["beta"]`
-- ✅ Region detection: from `info["country"]`
-- ❌ Country Risk Premium: NOT implemented – requires Damodaran external data
+### 0.2 Growth Stock Undervaluation Fix
+**Problem:** COST ($252 tool vs ~$400–600 external), WMT ($28 vs ~$60–90),
+ETN ($92 vs ~$280–360), GE ($54 vs ~$200–350), BSX ($25 vs ~$50–80),
+SYK ($135 vs ~$200–300) all severely undervalued by tool.
+**Root cause:** These stocks have low historical FCF relative to their
+current earning power. Market prices in much higher future FCF.
+**Signal:** When Price/Intrinsic Value > 2.5 AND P/E < 40 → market
+disagrees strongly with our DCF → growth premium not captured.
 
-Implementation:
+**Fix:**
 ```python
-def get_risk_free_rate():
-    """Live 10Y Treasury yield"""
-    try:
-        treasury = yf.Ticker("^TNX")
-        rate = treasury.info.get("regularMarketPrice", 4.0)
-        return rate / 100  # convert from percentage
-    except:
-        return 0.04  # fallback
+# Detect growth premium mismatch
+price_to_iv_ratio = price / intrinsic if intrinsic > 0 else 0
 
-def blume_adjusted_beta(raw_beta):
-    """Blume adjustment: mean reversion toward 1.0"""
-    if not raw_beta:
-        return 1.0
-    return 0.67 * raw_beta + 0.33 * 1.0
+if price_to_iv_ratio > 2.5 and pe and pe < 40:
+    show_warning("""
+    ⚠️ Growth Premium Gap: Market price is {ratio:.1f}× our DCF value.
+    The market is pricing in significantly higher future growth than 
+    our model assumes. Consider:
+    - Increasing FCF growth rate manually
+    - Using P/E or EV/EBITDA comparison instead
+    - Our DCF represents a conservative floor value
+    """)
 
-def get_equity_risk_premium(country):
-    """ERP by region – based on Damodaran averages"""
-    erp_map = {
-        "United States": 0.055,
-        "Germany": 0.060,
-        "Switzerland": 0.058,
-        "United Kingdom": 0.060,
-        "France": 0.062,
-        "Netherlands": 0.059,
-        "Japan": 0.065,
-    }
-    return erp_map.get(country, 0.060)  # default 6% for unknown
+# Also: for stocks where analyst growth > 15%, 
+# use analyst growth as primary source (increase weight from 30% to 50%)
 ```
-
-Display changes:
-- Show live risk-free rate with date fetched
-- Show raw beta vs adjusted beta
-- Show ERP used and which region detected
-- Show final WACC with all components visible
 
 **Claude Code instruction:**
 Read ROADMAP.md section 0.2 and app.py.
-Improve WACC calculation:
+Add growth premium gap detection:
 
-Add get_risk_free_rate() to fetch live 10Y Treasury yield from ^TNX
-Add blume_adjusted_beta() function as defined in ROADMAP
-Add get_equity_risk_premium() with regional mapping
-Update calculate_wacc() to use all three functions
-Show all components in WACC tab: live rate, raw vs adjusted beta, ERP
-Keep fallback values if live data unavailable
+Calculate price_to_iv_ratio = current price / intrinsic value
+If ratio > 2.5 AND P/E < 40: show warning about growth premium
+Increase analyst growth weight to 50% when earningsGrowth > 0.15
+Test with COST, WMT, ETN after fix
 Commit and push. Do nothing else.
 
 
-### 0.3 Terminal Value Plausibility Check
-**Why:** Terminal Value is 60-80% of total DCF value – small errors have huge impact
-**Data available:** ✅ All internally calculable – no new data needed
+### 0.3 Cyclical Stock Warning
+**Problem:** CAT ($171), DE ($138), ROK ($90), ETN ($92) are cyclicals
+whose FCF is measured at cycle peak. 3-year average overstates
+normalized earning power.
+**Root cause:** Industrial cyclicals have FCF that swings 50-100%
+through the cycle. A peak-cycle 3-year average is not representative.
 
-Implementation:
+**Fix:**
 ```python
-def check_terminal_value(tv_total, ebitda, wacc, terminal_growth):
-    """
-    Plausibility checks for terminal value
-    Returns warnings if assumptions seem unrealistic
-    """
-    warnings = []
+CYCLICAL_SECTORS = ["Industrials", "Energy", "Materials", 
+                    "Consumer Cyclical"]
+CYCLICAL_SYMBOLS = ["CAT", "DE", "ROK", "ETN", "EMR", "DOV",
+                    "PH", "AME", "IR", "XOM", "CVX", "COP"]
 
-    # Check 1: Terminal growth rate vs GDP growth
-    if terminal_growth > 0.025:
-        warnings.append(
-            f"⚠️ Terminal growth {terminal_growth*100:.1f}% exceeds "
-            f"long-term GDP growth (~2.5%). Consider reducing."
-        )
-
-    # Check 2: Implied EV/EBITDA multiple
-    if ebitda and ebitda > 0:
-        implied_multiple = tv_total / ebitda
-        if implied_multiple > 25:
-            warnings.append(
-                f"⚠️ Terminal Value implies EV/EBITDA of {implied_multiple:.1f}x "
-                f"– historically high. Most sectors trade at 8-15x."
-            )
-        elif implied_multiple < 4:
-            warnings.append(
-                f"⚠️ Terminal Value implies EV/EBITDA of {implied_multiple:.1f}x "
-                f"– very low. Check WACC and growth assumptions."
-            )
-
-    # Check 3: TV as % of total enterprise value
-    return warnings, implied_multiple if ebitda else None
+if sector in CYCLICAL_SECTORS or symbol in CYCLICAL_SYMBOLS:
+    # Use 5-year average instead of 3-year
+    # Show warning about cyclicality
+    warning = """⚠️ Cyclical company – FCF varies significantly 
+    through economic cycle. DCF based on recent peak FCF may 
+    overstate normalized earning power. Treat as upper bound."""
+    
+    # Also cap growth rate at sector default (4-6%)
+    growth = min(growth, SECTOR_DEFAULTS.get(sector, 0.05))
 ```
-
-Display:
-- Show implied EV/EBITDA multiple in DCF tab
-- Show TV as % of total enterprise value
-- Show warnings if any checks fail
-- Green checkmark if all checks pass
 
 **Claude Code instruction:**
 Read ROADMAP.md section 0.3 and app.py.
-Add terminal value plausibility checks:
+Add cyclical stock handling:
 
-Add check_terminal_value() function as defined in ROADMAP
-Show implied EV/EBITDA multiple in DCF Calculation tab
-Show TV as % of total enterprise value
-Show warnings if terminal growth > 2.5% or implied multiple > 25x
-Show green checkmark if all checks pass
+Create CYCLICAL_SECTORS and CYCLICAL_SYMBOLS lists
+For cyclicals: use 5-year FCF average instead of 3-year
+Cap growth rate at sector default for cyclicals
+Show warning: "Cyclical company – DCF represents peak-cycle estimate"
+Test with CAT, DE, ROK after fix
 Commit and push. Do nothing else.
 
 
-### 0.4 Full Transparency – All Calculation Steps Visible
-**Why:** User must be able to follow and verify every number
-**Data available:** ✅ All already calculated – only display improvements needed
+### 0.4 FMP API Validation – Second DCF Opinion
+**Purpose:** Cross-check our intrinsic value against Financial Modeling
+Prep's independent DCF calculation.
+**Data source:** FMP free API, 250 requests/day, no scraping needed.
 
-Every analysis should show:
+**Implementation:**
+```python
+FMP_API_KEY = st.secrets.get("FMP_API_KEY", "")
 
-DCF Inputs:
-- FCF base used (which years averaged, why)
-- Growth rate (how calculated – historical CAGR, analyst estimate, sector default)
-- Terminal growth rate
-- WACC components (risk-free rate + source, beta raw vs adjusted, ERP + region)
-- Margin of Safety
+def get_fmp_dcf(symbol):
+    """Fetch FMP's DCF value as independent cross-check"""
+    if not FMP_API_KEY:
+        return None
+    try:
+        url = f"https://financialmodelingprep.com/api/v3/discounted-cash-flow/{symbol}?apikey={FMP_API_KEY}"
+        r = requests.get(url, timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            if data:
+                return round(data[0]["dcf"], 2)
+    except:
+        pass
+    return None
 
-DCF Calculation steps:
-- Sum of discounted FCFs years 1-10
-- Terminal Value (absolute + as % of total)
-- Implied EV/EBITDA from Terminal Value
-- Enterprise Value
-- Net Debt breakdown (gross debt, cash, net)
-- Equity Value
-- Diluted shares outstanding
-- Intrinsic Value per share
-- With Margin of Safety
+def validate_dcf(our_value, fmp_value):
+    """Compare our DCF with FMP's"""
+    if not fmp_value or not our_value:
+        return None
+    diff_pct = abs(our_value - fmp_value) / fmp_value * 100
+    if diff_pct < 20:
+        return "✅ Consistent", diff_pct
+    elif diff_pct < 50:
+        return "⚠️ Some divergence", diff_pct
+    else:
+        return "🔴 Large divergence – verify inputs", diff_pct
+```
 
-Scenario Analysis:
-- All three scenarios with assumptions
-- Weighted fair value
-- Sensitivity table: how intrinsic value changes with ±1% WACC and ±1% growth
+**Display in Analysis page (new section after DCF results):**
+┌─────────────────────────────────────────────┐
+│ 🔍 DCF Validation                           │
+│ Our Tool (Base):    $119.56                 │
+│ FMP Independent:    $112.40                 │
+│ Difference:         6.3%  ✅ Consistent     │
+│                                             │
+│ Cross-check manually:                       │
+│ [Alpha Spread ↗] [GuruFocus ↗] [Simply Wall St ↗] │
+└─────────────────────────────────────────────┘
+
+**Setup required:**
+1. Get free API key at financialmodelingprep.com
+2. Add to Streamlit Cloud secrets: FMP_API_KEY = "your_key"
 
 **Claude Code instruction:**
 Read ROADMAP.md section 0.4 and app.py.
-Improve transparency in DCF Calculation tab:
+Add FMP DCF validation:
 
-Show FCF base calculation (which years used, average)
-Show growth rate source (historical CAGR / analyst estimate / sector default)
-Show WACC components: risk-free rate with source, raw beta, adjusted beta, ERP
-Show Net Debt breakdown: gross debt, cash, net debt
-Show Terminal Value as % of Enterprise Value
-Add sensitivity table: intrinsic value for WACC ±1% and Growth ±1%
+Add get_fmp_dcf() function as defined in ROADMAP
+Add validate_dcf() comparison function
+Show validation box in Analysis page after DCF results
+Add external links: Alpha Spread, GuruFocus, Simply Wall St
+Links should use symbol to open correct page, e.g.:
+https://www.alphaspread.com/security/nyse/{symbol}/dcf-valuation
+https://www.gurufocus.com/stock/{symbol}/dcf
+https://simplywall.st/stocks/us/-/-{symbol}/valuation
+FMP_API_KEY read from st.secrets with fallback if not set
+Commit and push. Do nothing else.
+
+
+### 0.5 Automatic Warning Flags
+**Purpose:** Auto-generate reliability warnings for problematic situations.
+Show prominently in Analysis page.
+
+```python
+def generate_warnings(result, info):
+    warnings = []
+    
+    # Negative equity
+    if (info.get("totalStockholdersEquity") or 0) < 0:
+        warnings.append(("🔴", "Negative book equity",
+            "Company has more liabilities than assets. "
+            "DCF result less reliable – verify manually."))
+    
+    # Growth premium gap
+    ratio = result["price"] / result["intrinsic"] if result["intrinsic"] > 0 else 0
+    if ratio > 2.5 and result.get("pe") and result["pe"] < 40:
+        warnings.append(("⚠️", "Growth premium not captured",
+            f"Market trades at {ratio:.1f}× our DCF value. "
+            "Market prices in higher future growth than model assumes."))
+    
+    # Cyclical at peak
+    if result["sector"] in ["Industrials", "Energy", "Materials"]:
+        warnings.append(("⚠️", "Cyclical sector",
+            "FCF may be at cycle peak. DCF could overstate "
+            "normalized earning power."))
+    
+    # Very high debt
+    net_debt_ratio = result.get("net_debt", 0) / result.get("market_cap", 1)
+    if net_debt_ratio > 2.0:
+        warnings.append(("🔴", "Very high debt",
+            f"Net debt is {net_debt_ratio:.1f}× market cap. "
+            "Company highly leveraged – DCF sensitive to assumptions."))
+    
+    # FCF outlier used
+    if result.get("fcf_note") and "outlier" in result["fcf_note"].lower():
+        warnings.append(("⚠️", "FCF outlier detected",
+            "Recent FCF deviates significantly from historical average. "
+            "Median used as base – verify with company reports."))
+    
+    # Currency conversion
+    if result.get("currency_converted"):
+        warnings.append(("⚠️", "Currency conversion applied",
+            f"FCF reported in {result['financial_currency']}, "
+            f"converted to {result['currency']}. "
+            "Exchange rate fluctuations affect result."))
+    
+    # Only 1 positive FCF year
+    if result.get("fcf_note") and "1 positive" in result["fcf_note"]:
+        warnings.append(("🔴", "Insufficient FCF history",
+            "Only 1 positive FCF year available. "
+            "DCF result highly uncertain."))
+    
+    return warnings
+```
+
+**Claude Code instruction:**
+Read ROADMAP.md section 0.5 and app.py.
+Add automatic warning flags:
+
+Add generate_warnings() function as defined in ROADMAP
+Show warnings prominently at top of Analysis page
+Each warning shows: icon, title, explanation
+Also show warning count in Database table (new column)
 Commit and push. Do nothing else.
 
 
 ---
 
+## 🟡 Priority 1 – Remaining Bug Fixes
 
+### 1.1 NVDA FCF Base Logic
+**Problem:** NVDA shows $44 (tool) vs $77–166 (external)
+**Root cause:** Despite recent-year logic, growth rate still too low
+**Fix:** Debug FCF base and growth rate, verify recent-year branch triggers
+
+### 1.2 CEG Constellation Energy
+**Problem:** $50 (tool) vs $226–382 (external)
+**Root cause:** Only 1 positive FCF year – DCF unreliable
+**Fix:** Add to DCF_UNRELIABLE list, show strong warning, suggest P/E instead
+
+### 1.3 JD.com / Deutsche Telekom Currency
+**Problem:** JD $168 (tool) vs $51–119 (external) – too high
+**Root cause:** CNY→USD conversion may be incorrect for ADR structure
+**Fix:** Verify ADR ratio and currency conversion for Chinese stocks
 
 ---
 
 ## 🟡 Priority 2 – Core Improvements
 
-### 2.1 Index Selection for Batch Analysis
-**Status:** Implemented
-**Verify:** DAX, S&P, NASDAQ dropdowns work correctly
+### 2.1 Index Selection for Batch Analysis ✅ Done
 
 ### 2.2 Index Filter in Database
-Add "Index" column to database entries and filter in Database page.
+Add "Index" column to entries, filter in Database page.
 
 **Claude Code instruction:**
 Read ROADMAP.md section 2.2 and app.py.
-Add index tracking:
+Add index tracking to database:
 
-When saving batch results add "Index" field with selected index name
-Add index filter to Database page
+Add "Index" field when saving batch results
+Add index filter dropdown in Database page
 Commit and push. Do nothing else.
 
 
 ### 2.3 Stock Detail View from Database
-Make database rows clickable → opens full Analysis page for that stock.
+Make database rows clickable → opens full Analysis page.
 
 **Claude Code instruction:**
 Read ROADMAP.md section 2.3 and app.py.
-Make database rows clickable:
-
-Add "Analyze" button per row
-Clicking sets st.session_state.selected_symbol
-Navigates to Analysis page with stock pre-loaded
+Add "Analyze" button to each database row.
+Clicking sets st.session_state.selected_symbol and navigates to Analysis page.
+Analysis page auto-loads the symbol if selected_symbol is set in session_state.
+Add "← Back to Database" button at top of Analysis page.
 Commit and push. Do nothing else.
-
 
 ### 2.4 Tooltips & Terminology
-Add ℹ️ tooltips to all metrics. Priority terms:
+Add ℹ️ tooltips to all metrics using st.metric() help parameter.
 
-| Term | Explanation |
-|------|-------------|
-| MoS | Margin of Safety – buffer between intrinsic value and max buy price. Only buy if price is at least 25% below intrinsic value. |
-| WACC | Weighted Average Cost of Capital – discount rate in DCF. Minimum return investors expect. Higher = more conservative valuation. |
-| DCF | Discounted Cash Flow – values company by forecasting future cash flows and discounting to today. |
-| FCF | Free Cash Flow – cash generated after all expenses and investments. Foundation of DCF. |
-| Terminal Value | Present value of all cash flows beyond 10-year forecast. Usually 60-80% of total DCF value. |
-| Beta | Stock volatility vs market. 1.0 = same as market. Higher = more volatile = higher WACC. |
-| Blume Beta | Adjusted beta = 0.67 × raw beta + 0.33 × 1.0. Accounts for mean reversion toward market average. |
-| ERP | Equity Risk Premium – extra return investors demand for stocks vs risk-free bonds. ~5.5% USA, ~6% Europe. |
-| EV/EBITDA | Enterprise value multiple. Removes debt and tax effects. Below 8 = attractive, 8-12 = fair. |
-| Deviation % | Distance from intrinsic value. Negative = undervalued. -20% = trades 20% below fair value. |
-| Weighted Fair Value | Bear×25% + Base×50% + Bull×25% – more honest than single DCF estimate. |
-| Implied Multiple | EV/EBITDA implied by Terminal Value. Should be 8-20x for most sectors. Warning if >25x. |
+Priority terms: MoS, WACC, DCF, FCF, Deviation %, Weighted Fair Value,
+Blume Beta, ERP, Implied Multiple, Terminal Value, Piotroski.
 
-**Claude Code instruction:**
-Read ROADMAP.md section 2.4 and app.py.
-Add tooltips using st.metric() help parameter and ℹ️ expanders:
-
-All metrics in Analysis page get tooltip
-Value Score categories get explanation
-Add Glossary section to Methodology page
-Priority: MoS, WACC, DCF, FCF, Deviation %, Weighted Fair Value
-Commit and push. Do nothing else.
-
+Full glossary already documented in ROADMAP – see Glossary section below.
 
 ### 2.5 Value Score Category Explanations
-Show WHY each category received its score.
-
-Examples:
-- "DCF Deviation 18/25 – Stock trades 22% below weighted fair value."
-- "FCF Quality 14/20 – FCF $8.2B positive, yield 4.1%, CAGR 12%."
-- "Valuation 8/25 – P/E 24x above average, EV/EBITDA 14x elevated."
-- "N/A – Financial sector: DCF not applicable for banks."
+Show WHY each category received its score dynamically.
 
 ### 2.6 Additional Database Filters
-Add to Database page:
-- Market Cap: Mega (>$200B) / Large / Mid / Small
-- Value Score minimum slider
-- Undervalued only checkbox
-- FCF positive only checkbox
-- Dividend minimum %
-- ROE minimum %
-- Index filter (after 2.1)
-
-**Claude Code instruction:**
-Read ROADMAP.md section 2.6 and app.py.
-Add filters to Database page:
-
-Market Cap category filter
-Value Score minimum slider
-Undervalued only checkbox
-FCF positive only checkbox
-Dividend minimum slider
-Commit and push. Do nothing else.
-
+Add: Market Cap category, Value Score minimum, Undervalued only checkbox,
+FCF positive only, Dividend minimum, ROE minimum, Index filter.
 
 ---
 
 ## 🟠 Priority 3 – Further Methodology
 
 ### 3.1 Stock Type Detection & Methodology Recommendation
-Show at top of Analysis which method is best for this stock:
+Show at top of Analysis which method is best:
 📊 Apple – Quality Growth
-✅ Two-Stage DCF   Best – strong FCF CAGR 15%
-✅ PEG Ratio       Useful – validates growth premium
-⚠️  P/E            Use in tech sector context only
-❌  DDM             Not applicable – dividend only 0.5%
+✅ Two-Stage DCF    Best – strong FCF CAGR 15%
+✅ PEG Ratio        Useful – validates growth premium
+⚠️  P/E             Tech sector context only
+❌  DDM              Not applicable – dividend 0.5%
 
 ### 3.2 Two-Stage DCF
-- Phase 1 (Years 1-5): high growth rate
-- Phase 2 (Years 6-10): linear decline toward terminal
-- Especially important for growth stocks
+Phase 1 (Years 1–5): high growth · Phase 2 (Years 6–10): linear decline.
 
 ### 3.3 PEG Ratio
-```python
-PEG = P/E / FCF_CAGR_percent
-# PEG < 1.0 = attractive even for growth stocks
-# PEG > 2.0 = expensive regardless of growth
-```
+PEG = P/E / FCF CAGR%. Below 1.0 = attractive even for growth stocks.
 
 ### 3.4 Piotroski F-Score
 9-point quality checklist. Proven +13.4% annual outperformance.
-Full implementation in original ROADMAP.
+Full implementation documented in original ROADMAP.
 
 ### 3.5 DDM for Dividend Stocks
-Gordon Growth Model for dividend yield > 2%:
-V = D1 / (r - g)
+Gordon Growth Model for dividend yield > 2%: V = D1 / (r - g)
 
 ---
 
 ## 🔵 Priority 4 – User Experience
 
 ### 4.1 Stock Comparison
-Side-by-side comparison of 2-3 stocks.
+Side-by-side comparison of 2–3 stocks.
 
 ### 4.2 Watchlist with Notes
 Personal watchlist with target prices and notes.
 Persist in watchlist.json on GitHub.
 
-### 4.3 Risk Flags
-Auto-generate risk warnings:
+### 4.3 Risk Flags (extended)
+Auto-generate risk warnings beyond DCF:
 - 🔴 FCF negative 2+ years
-- 🔴 High debt ratio
+- 🔴 High debt ratio (Net Debt/EBITDA > 4×)
 - 🟠 Cyclical sector
-- 🟠 Regulatory risk
+- 🟠 Patent cliff risk (Healthcare with declining revenue)
+- 🟡 Currency risk (non-USD reporting)
 
 ### 4.4 Soft Color Scheme
 Replace harsh red/green with soft gradients throughout.
+Undervalued: #E8F5E9 · Overvalued: #FFEBEE · Neutral: #E3F2FD
 
 ---
 
@@ -390,7 +397,7 @@ Replace harsh red/green with soft gradients throughout.
 
 ### 5.0 Pre-populated Database for Launch
 Run full batch before first public rollout.
-Target: 150+ stocks with valid DCF results.
+Target: 200+ stocks with valid DCF results.
 
 ### 5.1 Daily Auto-Update via GitHub Actions
 ```yaml
@@ -404,7 +411,7 @@ on:
 Full S&P 500, DAX 40, STOXX 600 value subset, FTSE 100.
 
 ### 5.3 Trade Republic Integration
-CSV import from TR export as first step.
+CSV import as first step.
 
 ---
 
@@ -430,10 +437,11 @@ plotly
 requests
 matplotlib
 
-### Secrets
+### Secrets (Streamlit Cloud)
 ```toml
 GITHUB_TOKEN = "ghp_..."
-GITHUB_REPO = "username/aktien-tool"
+GITHUB_REPO  = "username/aktien-tool"
+FMP_API_KEY  = "your_fmp_key"   ← new, get free at financialmodelingprep.com
 ```
 
 ### Session Start Command
@@ -446,35 +454,51 @@ Commit: 3c1a1f0
 Restore: git checkout 3c1a1f0 -- app.py
 
 ### Rate Limit Recovery
-If app shows rate limit error:
-1. Streamlit: Manage app → Reboot
-2. Local: pip3 install yfinance --upgrade
+Streamlit: Manage app → Reboot app
+Local: pip3 install yfinance --upgrade
 
 ### DCF Methodology Decisions
-Based on analysis of available yfinance data:
-
 ✅ IMPLEMENT:
-- Three-scenario DCF (Bear/Base/Bull) – no new data needed
-- Live risk-free rate from ^TNX – available via yfinance
-- Blume-adjusted beta – calculated from raw beta
-- Regional ERP mapping – hardcoded constants
-- Terminal Value plausibility check – calculated internally
-- Full transparency of all calculation steps
+- Three-scenario DCF (Bear/Base/Bull)
+- Live risk-free rate from ^TNX
+- Blume-adjusted beta
+- Regional ERP mapping
+- Terminal Value plausibility check
+- Full transparency
+- FMP API cross-validation
+- Automatic warning flags
 
-❌ DO NOT IMPLEMENT (data not reliably available):
-- FCFF bottom-up (EBIT - taxes + D&A - ΔNWC - CapEx)
-  → EBIT not reliable in yfinance for all stocks
-  → ΔNWC calculation too error-prone
-  → Risk: breaks calculation for many stocks
-- Country Risk Premium
-  → Requires Damodaran external data not in yfinance
-- Pension liabilities, minority interests
-  → Not consistently available in yfinance
-- Full historical normalization of one-off items
-  → Requires human judgment, not automatable
+❌ DO NOT IMPLEMENT:
+- FCFF bottom-up (EBIT unreliable in yfinance)
+- Country Risk Premium (external data needed)
+- Pension liabilities (not in yfinance)
+- Full historical normalization (requires human judgment)
 
-INSTEAD: Use 3-year average FCF as robust base
-(already implemented – handles outliers naturally)
+### Known Validation Issues (from testing April 2026)
+Stocks where tool diverges significantly from external DCF tools:
+
+TOO LOW (tool underestimates):
+- NVDA: $44 vs $77–166 external → FCF base logic
+- CEG: $50 vs $226–382 → only 1 positive FCF year
+- ETN: $92 vs $280–360 → cyclical peak FCF
+- GE: $54 vs $200–350 → same issue
+- COST: $252 vs $400–600 → growth premium
+- WMT: $28 vs $60–90 → growth premium
+
+TOO HIGH (tool overestimates):
+- CI: $1140 → FCF volatile from acquisitions
+- BIIB: $429 vs $205 → FCF declining
+- CAG: $139 vs ~$20–30 → negative earnings
+
+UNRELIABLE (DCF not suitable):
+- CEG → volatile/negative FCF
+- JPM → bank, DCF not applicable
+- VWAPY → negative FCF
+
+CURRENCY ISSUES (verify):
+- JD: $168 vs $51–119 → CNY/ADR conversion
+- BABA → CNY/ADR conversion
+- DTE.DE → EUR conversion
 
 ---
 
@@ -486,21 +510,14 @@ INSTEAD: Use 3-year average FCF as robust base
 | WACC | Weighted Average Cost of Capital – DCF discount rate |
 | DCF | Discounted Cash Flow – core valuation method |
 | FCF | Free Cash Flow – cash after all expenses and investments |
-| FCFF | Free Cash Flow to Firm – available to all capital providers |
-| Terminal Value | PV of all cash flows beyond 10-year forecast |
-| Blume Beta | Adjusted beta = 0.67×raw + 0.33×1.0 (mean reversion) |
+| Terminal Value | PV of all cash flows beyond 10-year forecast (60–80% of total) |
+| Blume Beta | 0.67 × raw beta + 0.33 × 1.0 – accounts for mean reversion |
 | ERP | Equity Risk Premium – ~5.5% USA, ~6% Europe |
-| Implied Multiple | EV/EBITDA implied by Terminal Value (should be 8-20x) |
+| Implied Multiple | EV/EBITDA implied by Terminal Value (should be 8–20×) |
 | Weighted Fair Value | Bear×25% + Base×50% + Bull×25% |
 | Deviation % | Price vs intrinsic value. Negative = undervalued |
-| PEG | P/E divided by growth rate. Below 1.0 = attractive |
+| PEG | P/E / growth rate. Below 1.0 = attractive |
 | Piotroski | 9-point quality score. Above 7 = strong fundamentals |
-
-Commit mit Update ROADMAP - DCF methodology improvements auf GitHub.
-Für die nächste Claude Code Session:
-Read ROADMAP.md and app.py.
-Start with Priority 0.1 – Three-Scenario DCF.
-Implement Bear/Base/Bull scenarios as defined in ROADMAP.
-Show weighted fair value prominently.
-Commit and push after. Do nothing else until I confirm.
-Das ist der wichtigste nächste Schritt – alles andere baut darauf auf.Sonnet 4.6
+| Negative Equity | Book equity < 0 – often from buybacks or losses |
+| Growth Premium | Market prices in higher growth than DCF model captures |
+| Cyclical | FCF swings with economic cycle – peak FCF overstates normal earnings |
