@@ -388,6 +388,7 @@ def calculate_value_score_detail(e):
     eveb = e.get("ev_ebitda") or 0
     roe  = e.get("roe") or 0
     roe  = roe * 100 if roe and abs(roe) < 2 else roe
+    neg_book_equity = pb < 0
     mult_pts = 0
     if is_fin:
         if 0 < pb < 0.8:    mult_pts += 15
@@ -413,24 +414,38 @@ def calculate_value_score_detail(e):
         if 0 < pe < 12:     mult_pts += 9
         elif 0 < pe < 18:   mult_pts += 5
         elif 0 < pe < 25:   mult_pts += 2
-        if 0 < pb < 1.5:    mult_pts += 8
-        elif 0 < pb < 3:    mult_pts += 4
-        elif 0 < pb < 5:    mult_pts += 2
+        if not neg_book_equity:
+            if 0 < pb < 1.5:    mult_pts += 8
+            elif 0 < pb < 3:    mult_pts += 4
+            elif 0 < pb < 5:    mult_pts += 2
         if 0 < eveb < 8:    mult_pts += 8
         elif 0 < eveb < 12: mult_pts += 4
-    details["Valuation"] = {"points": mult_pts, "max": 25, "applicable": True, "note": ""}
+    # P/B is meaningless with negative book equity – remove it from the scoring max
+    val_max  = 17 if (neg_book_equity and not is_fin and not is_util_re and "Energy" not in sector) else 25
+    val_note = "P/B excluded – negative book equity (buyback-driven)" if (neg_book_equity and val_max == 17) else ""
+    details["Valuation"] = {"points": mult_pts, "max": val_max, "applicable": True, "note": val_note}
 
     # --- Profitability (max 15) ---
     margin = e.get("net_margin") or 0
     margin = margin * 100 if margin and abs(margin) < 1 else margin
-    prof_pts = 0
-    if roe > 20:      prof_pts += 8
-    elif roe > 12:    prof_pts += 5
-    elif roe > 8:     prof_pts += 2
+    prof_pts  = 0
+    prof_note = ""
+    if neg_book_equity and roe <= 0:
+        # ROE is distorted by negative equity denominator – use ROA instead
+        roa = e.get("return_on_assets") or 0
+        roa = roa * 100 if roa and abs(roa) < 1 else roa
+        if roa > 10:    prof_pts += 8
+        elif roa > 6:   prof_pts += 5
+        elif roa > 3:   prof_pts += 2
+        prof_note = "ROE not meaningful (negative book equity) – ROA used instead"
+    else:
+        if roe > 20:      prof_pts += 8
+        elif roe > 12:    prof_pts += 5
+        elif roe > 8:     prof_pts += 2
     if margin > 20:   prof_pts += 7
     elif margin > 10: prof_pts += 4
     elif margin > 5:  prof_pts += 2
-    details["Profitability"] = {"points": prof_pts, "max": 15, "applicable": True, "note": ""}
+    details["Profitability"] = {"points": prof_pts, "max": 15, "applicable": True, "note": prof_note}
 
     # --- Stability (max 15, or 8 if no dividend) ---
     thresholds = (1.5, 3.0, 5.0) if (is_fin or is_util_re) else (0.3, 0.8, 1.5)
@@ -631,6 +646,15 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     tv_disc    = tv / (1 + wacc) ** 10
     enterprise = sum(discounted) + tv_disc
     equity     = enterprise - net_debt
+    neg_book_equity  = (info.get("priceToBook") or 1) < 0
+    neg_equity_warning = None
+    if equity <= 0:
+        neg_equity_warning = (
+            f"⚠️ Net debt (${net_debt/1e9:.1f}B) exceeds DCF enterprise value "
+            f"(${enterprise/1e9:.1f}B). Intrinsic value shown uses enterprise value ÷ shares "
+            f"(net debt adjustment omitted). Result is optimistic – verify debt figures."
+        )
+        equity = enterprise  # fallback: show enterprise value per share
     intrinsic  = equity / shares
     with_margin = intrinsic * (1 - margin_of_safety)
     price      = float(info.get("currentPrice") or 0)
@@ -745,6 +769,9 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
         "weighted_intrinsic":   round(weighted_iv, 2),
         "weighted_with_margin": round(weighted_mos, 2),
         "weighted_deviation":   round(weighted_dev, 1),
+        "neg_book_equity":      neg_book_equity,
+        "neg_equity_warning":   neg_equity_warning,
+        "return_on_assets":     info.get("returnOnAssets"),
         "last_updated":         datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
     score, details = calculate_value_score_detail(result)
@@ -1031,6 +1058,16 @@ elif page == "🔍 Analysis":
                 f"⚠️ Currency conversion applied: FCF and balance sheet reported in "
                 f"**{r['fx_from']}**, stock trades in **{r['fx_to']}**.  \n"
                 f"All financial values converted at **1 {r['fx_from']} = {r['fx_rate']:.4f} {r['fx_to']}**."
+            )
+
+        # --- Negative equity warnings ---
+        if r.get("neg_equity_warning"):
+            st.error(r["neg_equity_warning"])
+        elif r.get("neg_book_equity"):
+            st.warning(
+                "⚠️ This company has **negative book equity** (stockholders' equity < 0), "
+                "typically from aggressive share buybacks or large dividend payouts. "
+                "P/B ratio and ROE are not meaningful – Value Score adjusted accordingly."
             )
 
         # --- Growth rate info banner ---
