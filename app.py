@@ -956,8 +956,7 @@ def show_value_score(result):
 st.sidebar.title("📈 Stock Analysis")
 page = st.sidebar.radio(
     "Navigation",
-    ["🏠 Dashboard", "🔍 Analysis", "📊 Database",
-     "💼 Portfolio", "🔄 Batch Analysis", "📖 Methodology"]
+    ["🔍 Analysis", "📊 Database", "🔄 Batch Analysis", "📖 Methodology"]
 )
 st.sidebar.divider()
 st.sidebar.caption(f"Database: {len(st.session_state.database)} stocks")
