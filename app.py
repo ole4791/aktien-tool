@@ -296,6 +296,29 @@ def get_equity_risk_premium(country):
     return erp_map.get(country, 0.060)  # default 6% for unknown regions
 
 
+TOBACCO_SYMBOLS = {"MO", "PM", "BTI", "BATS.L", "IMB.L", "MO.SW", "MO.BA"}
+
+
+def get_terminal_growth_default(sector, symbol, revenue_growth=None):
+    """Return (default_rate, max_rate, description) based on sector/symbol characteristics."""
+    sector      = sector or ""
+    sym         = (symbol or "").upper()
+    rev_g       = revenue_growth or 0.0
+    GDP_CAP     = 0.030   # hard ceiling for any company
+
+    if sym in TOBACCO_SYMBOLS or "tobacco" in sector.lower():
+        return 0.010, 0.015, "Tobacco: declining industry (recommended 1.0–1.5%)"
+    if "Utilities" in sector:
+        return 0.020, 0.025, "Utilities: regulated, slow growth (recommended 2.0–2.5%)"
+    if "Energy" in sector:
+        return 0.015, 0.020, "Energy: commodity cyclical (recommended 1.5–2.0%)"
+    if "Consumer" in sector and "Defensive" in sector and rev_g < 0:
+        return 0.015, 0.020, "Consumer Defensive (declining revenue): recommended 1.5–2.0%"
+    if ("Technology" in sector or "Healthcare" in sector) and rev_g > 0:
+        return 0.025, GDP_CAP, "Technology/Healthcare (growing): recommended 2.5–3.0%"
+    return 0.025, GDP_CAP, "Standard assumption (recommended 2.5–3.0%)"
+
+
 def calculate_wacc(info, debt_fx=1.0):
     raw_beta   = float(info.get("beta") or 1.0)
     adj_beta   = blume_adjusted_beta(raw_beta)
@@ -307,25 +330,41 @@ def calculate_wacc(info, debt_fx=1.0):
     interest   = float(info.get("interestExpense") or 0)
     tax        = float(info.get("effectiveTaxRate") or 0.21)
     cost_eq    = rfr + adj_beta * erp
-    cost_debt  = abs(interest) / debt if debt > 0 and interest else 0.04
+    cost_debt_estimated = False
+    if debt > 0 and interest:
+        cost_debt = abs(interest) / debt
+    elif debt > 0:
+        # Estimate pre-tax cost of debt from leverage when yfinance lacks interest expense
+        debt_to_mktcap = debt / mktcap if mktcap > 0 else 99
+        if debt_to_mktcap > 2:
+            cost_debt = 0.055   # high leverage → speculative-grade spread
+        elif debt_to_mktcap > 1:
+            cost_debt = 0.045   # moderate leverage → investment-grade spread
+        else:
+            cost_debt = 0.040   # low leverage → strong investment-grade
+        cost_debt_estimated = True
+    else:
+        cost_debt = 0.040
     cost_debt_at = cost_debt * (1 - tax)
     total      = mktcap + debt
     eq_weight  = mktcap / total if total > 0 else 1.0
     debt_weight = debt  / total if total > 0 else 0.0
     wacc       = eq_weight * cost_eq + debt_weight * cost_debt_at
     return {
-        "wacc":        wacc,
-        "raw_beta":    raw_beta,
-        "adj_beta":    adj_beta,
-        "cost_eq":     cost_eq,
-        "cost_debt_at": cost_debt_at,
-        "eq_weight":   eq_weight,
-        "debt_weight": debt_weight,
-        "rfr":         rfr,
-        "rfr_live":    rfr_live,
-        "rfr_date":    rfr_date.strftime("%Y-%m-%d"),
-        "erp":         erp,
-        "country":     country,
+        "wacc":               wacc,
+        "raw_beta":           raw_beta,
+        "adj_beta":           adj_beta,
+        "cost_eq":            cost_eq,
+        "cost_debt":          cost_debt,
+        "cost_debt_at":       cost_debt_at,
+        "cost_debt_estimated": cost_debt_estimated,
+        "eq_weight":          eq_weight,
+        "debt_weight":        debt_weight,
+        "rfr":                rfr,
+        "rfr_live":           rfr_live,
+        "rfr_date":           rfr_date.strftime("%Y-%m-%d"),
+        "erp":                erp,
+        "country":            country,
     }
 
 
@@ -631,6 +670,16 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     debt_w     = wc["debt_weight"]
     wacc = wacc_override if wacc_override else wacc_calc
 
+    # --- Sector-aware terminal growth cap ---
+    rev_g_info  = info.get("revenueGrowth")   # fast proxy; full calc happens later
+    term_default, term_max, term_desc = get_terminal_growth_default(
+        info.get("sector", ""), symbol, rev_g_info
+    )
+    terminal_original = terminal
+    terminal_capped   = terminal > term_max
+    if terminal_capped:
+        terminal = term_max
+
     if wacc <= terminal:
         return None, "WACC must be greater than terminal growth rate"
 
@@ -757,6 +806,12 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
         "growth_auto":          growth_auto,
         "growth_sources":       growth_sources,
         "terminal_assumption":  round(terminal * 100, 1),
+        "terminal_original":    round(terminal_original * 100, 1),
+        "terminal_capped":      terminal_capped,
+        "terminal_recommendation": round(term_default * 100, 1),
+        "terminal_max":         round(term_max * 100, 1),
+        "terminal_desc":        term_desc,
+        "cost_debt_estimated":  wc["cost_debt_estimated"],
         "mos_assumption":       round(margin_of_safety * 100, 0),
         "fx_converted":         fx_converted,
         "fx_from":              fin_ccy if fx_converted else None,
@@ -1023,6 +1078,14 @@ elif page == "🔍 Analysis":
     col1, col2 = st.columns(2)
     with col1:
         terminal = st.slider("Terminal Growth %", 0, 6, 3) / 100
+        _last = st.session_state.last_result
+        if _last and _last.get("terminal_desc"):
+            st.caption(f"💡 {_last['terminal_desc']}")
+            if terminal * 100 > _last.get("terminal_max", 3.0):
+                st.warning(
+                    f"⚠️ Terminal growth {terminal*100:.1f}% above sector recommendation "
+                    f"(max {_last['terminal_max']:.1f}% for this stock)"
+                )
     with col2:
         mos = st.slider("Margin of Safety %", 0, 50, 25) / 100
 
@@ -1068,6 +1131,21 @@ elif page == "🔍 Analysis":
                 "⚠️ This company has **negative book equity** (stockholders' equity < 0), "
                 "typically from aggressive share buybacks or large dividend payouts. "
                 "P/B ratio and ROE are not meaningful – Value Score adjusted accordingly."
+            )
+
+        # --- Terminal growth cap warning ---
+        if r.get("terminal_capped"):
+            st.warning(
+                f"⚠️ Terminal growth capped at **{r['terminal_assumption']:.1f}%** "
+                f"(your input {r['terminal_original']:.1f}% exceeded the sector limit). "
+                f"{r.get('terminal_desc', '')}"
+            )
+
+        # --- Cost of debt estimation notice ---
+        if r.get("cost_debt_estimated"):
+            st.info(
+                "ℹ️ Interest expense not available from yfinance – cost of debt estimated "
+                "from leverage ratio. WACC may be slightly imprecise."
             )
 
         # --- Growth rate info banner ---
@@ -1797,7 +1875,8 @@ elif page == "🔄 Batch Analysis":
     with col1:
         b_growth   = st.slider("FCF Growth %", 0, 15, 6) / 100
     with col2:
-        b_terminal = st.slider("Terminal Growth %", 1, 5, 3) / 100
+        b_terminal = st.slider("Terminal Growth % (max)", 1, 5, 3) / 100
+        st.caption("Sector-aware caps applied per stock (e.g. tobacco ≤ 1.5%, energy ≤ 2.0%)")
     with col3:
         b_mos      = st.slider("Margin of Safety %", 0, 40, 25) / 100
 
