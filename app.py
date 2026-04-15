@@ -19,6 +19,7 @@ st.set_page_config(
 # ================================================================
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
 GITHUB_REPO  = st.secrets.get("GITHUB_REPO", "")
+FMP_API_KEY  = st.secrets.get("FMP_API_KEY", "")
 DB_FILE      = "datenbank.json"
 PORT_FILE    = "portfolio.json"
 
@@ -575,6 +576,47 @@ def calculate_realistic_growth(symbol, info, cashflow):
 
     weighted = sum(r * w for r, w in zip(rates, weights)) / sum(weights)
     return round(weighted * 0.80, 4), sources  # 20% conservative haircut
+
+
+_fmp_cache: dict = {}
+
+def get_fmp_dcf(symbol):
+    """Fetch FMP's independent DCF intrinsic value. Returns float or None."""
+    if not FMP_API_KEY:
+        return None
+    now = datetime.now()
+    cached = _fmp_cache.get(symbol)
+    if cached and (now - cached["fetched_at"]).total_seconds() < 3600:
+        return cached["value"]
+    try:
+        url = (
+            f"https://financialmodelingprep.com/api/v3/discounted-cash-flow/"
+            f"{symbol}?apikey={FMP_API_KEY}"
+        )
+        resp = requests.get(url, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data and isinstance(data, list) and "dcf" in data[0]:
+                value = round(float(data[0]["dcf"]), 2)
+                _fmp_cache[symbol] = {"value": value, "fetched_at": now}
+                return value
+    except Exception:
+        pass
+    _fmp_cache[symbol] = {"value": None, "fetched_at": now}
+    return None
+
+
+def validate_dcf(our_value, fmp_value):
+    """Compare our Base DCF against FMP. Returns (label, diff_pct) or None."""
+    if not fmp_value or not our_value:
+        return None
+    diff_pct = abs(our_value - fmp_value) / fmp_value * 100
+    if diff_pct < 20:
+        return "✅ Consistent", diff_pct
+    elif diff_pct < 50:
+        return "⚠️ Some divergence", diff_pct
+    else:
+        return "🔴 Large divergence – verify inputs", diff_pct
 
 
 CYCLICAL_SECTORS = {"Industrials", "Energy", "Materials", "Consumer Cyclical"}
@@ -1259,6 +1301,43 @@ elif page == "🔍 Analysis":
                 margin=dict(t=50, b=20)
             )
             st.plotly_chart(fig_sc, use_container_width=True)
+
+        # --- DCF Validation box ---
+        st.divider()
+        st.markdown("#### 🔍 DCF Validation")
+        our_base = r.get("intrinsic", 0)
+
+        vcol1, vcol2 = st.columns([1, 1])
+        with vcol1:
+            if FMP_API_KEY:
+                with st.spinner("Fetching FMP independent DCF…"):
+                    fmp_val = get_fmp_dcf(r["symbol"])
+                validation = validate_dcf(our_base, fmp_val)
+                if fmp_val and validation:
+                    label, diff_pct = validation
+                    st.markdown(
+                        f"| | |\n|---|---|\n"
+                        f"| **Our Tool (Base)** | ${our_base:.2f} |\n"
+                        f"| **FMP Independent** | ${fmp_val:.2f} |\n"
+                        f"| **Difference** | {diff_pct:.1f}%  {label} |"
+                    )
+                elif fmp_val is None:
+                    st.caption("FMP API returned no data for this symbol.")
+                    st.metric("Our Tool (Base)", f"${our_base:.2f}")
+                else:
+                    st.metric("Our Tool (Base)", f"${our_base:.2f}")
+            else:
+                st.metric("Our Tool (Base)", f"${our_base:.2f}")
+                st.caption("Add `FMP_API_KEY` to Streamlit secrets for an independent FMP cross-check.")
+
+        with vcol2:
+            sym = r["symbol"].split(".")[0]   # strip exchange suffix for URL construction
+            st.markdown("**Cross-check manually:**")
+            st.markdown(
+                f"[Alpha Spread ↗](https://www.alphaspread.com/security/nyse/{sym}/dcf-valuation)  \n"
+                f"[GuruFocus ↗](https://www.gurufocus.com/stock/{r['symbol']}/dcf)  \n"
+                f"[Simply Wall St ↗](https://simplywall.st/stocks/us/-/-{sym}/valuation)"
+            )
 
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📊 Key Metrics", "💰 FCF & Cashflows",
