@@ -457,6 +457,20 @@ Restore: git checkout 3c1a1f0 -- app.py
 Streamlit: Manage app → Reboot app
 Local: pip3 install yfinance --upgrade
 
+### Sector-Aware Terminal Growth Caps (as of 2026-04-15)
+Default slider: **2.0%**. Hard ceiling: **3.0%** (GDP growth).
+
+| Sector | Default | Max | Notes |
+|--------|---------|-----|-------|
+| Tobacco (MO, PM, BTI…) | 1.0% | 1.5% | Secular volume decline |
+| Energy | 1.5% | 2.0% | Commodity cyclical |
+| Utilities | 1.5% | 2.5% | Regulated, stable |
+| Consumer Defensive (declining) | 1.5% | 2.0% | Negative revenue growth |
+| Technology / Healthcare (growing) | 2.0% | 3.0% | Positive revenue growth |
+| All others | 2.0% | 3.0% | Standard assumption |
+
+Caps enforced automatically inside `run_dcf()`. User input is capped at sector max with a visible warning.
+
 ### DCF Methodology Decisions
 ✅ IMPLEMENT:
 - Three-scenario DCF (Bear/Base/Bull)

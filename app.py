@@ -309,14 +309,14 @@ def get_terminal_growth_default(sector, symbol, revenue_growth=None):
     if sym in TOBACCO_SYMBOLS or "tobacco" in sector.lower():
         return 0.010, 0.015, "Tobacco: declining industry (recommended 1.0–1.5%)"
     if "Utilities" in sector:
-        return 0.020, 0.025, "Utilities: regulated, slow growth (recommended 2.0–2.5%)"
+        return 0.015, 0.025, "Utilities: regulated, slow growth (recommended 1.5–2.5%)"
     if "Energy" in sector:
         return 0.015, 0.020, "Energy: commodity cyclical (recommended 1.5–2.0%)"
     if "Consumer" in sector and "Defensive" in sector and rev_g < 0:
         return 0.015, 0.020, "Consumer Defensive (declining revenue): recommended 1.5–2.0%"
     if ("Technology" in sector or "Healthcare" in sector) and rev_g > 0:
-        return 0.025, GDP_CAP, "Technology/Healthcare (growing): recommended 2.5–3.0%"
-    return 0.025, GDP_CAP, "Standard assumption (recommended 2.5–3.0%)"
+        return 0.020, GDP_CAP, "Technology/Healthcare (growing): recommended 2.0–3.0%"
+    return 0.020, GDP_CAP, "Standard assumption (recommended 2.0–3.0%)"
 
 
 def calculate_wacc(info, debt_fx=1.0):
@@ -1077,7 +1077,7 @@ elif page == "🔍 Analysis":
 
     col1, col2 = st.columns(2)
     with col1:
-        terminal = st.slider("Terminal Growth %", 0, 6, 3) / 100
+        terminal = st.slider("Terminal Growth %", 0, 6, 2) / 100
         _last = st.session_state.last_result
         if _last and _last.get("terminal_desc"):
             st.caption(f"💡 {_last['terminal_desc']}")
@@ -1875,7 +1875,7 @@ elif page == "🔄 Batch Analysis":
     with col1:
         b_growth   = st.slider("FCF Growth %", 0, 15, 6) / 100
     with col2:
-        b_terminal = st.slider("Terminal Growth % (max)", 1, 5, 3) / 100
+        b_terminal = st.slider("Terminal Growth % (max)", 1, 5, 2) / 100
         st.caption("Sector-aware caps applied per stock (e.g. tobacco ≤ 1.5%, energy ≤ 2.0%)")
     with col3:
         b_mos      = st.slider("Margin of Safety %", 0, 40, 25) / 100
