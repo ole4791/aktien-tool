@@ -577,6 +577,75 @@ def calculate_realistic_growth(symbol, info, cashflow):
     return round(weighted * 0.80, 4), sources  # 20% conservative haircut
 
 
+CYCLICAL_SECTORS = {"Industrials", "Energy", "Materials", "Consumer Cyclical"}
+
+
+def generate_warnings(r):
+    """
+    Return list of (icon, title, explanation) tuples for the given result dict.
+    Covers the 7 priority cases defined in ROADMAP 0.5.
+    """
+    warns = []
+
+    # 1. Negative book equity (P/B < 0)
+    if r.get("neg_book_equity"):
+        if r.get("neg_equity_warning"):
+            # Net debt exceeded DCF enterprise value – more severe
+            warns.append(("🔴", "Negative book equity – DCF equity also negative",
+                "Net debt exceeds discounted cash flows; intrinsic shown is enterprise value ÷ shares. "
+                "Result is optimistic – verify debt figures manually."))
+        else:
+            warns.append(("🔴", "Negative book equity",
+                "Company has more liabilities than assets (likely buyback-driven). "
+                "P/B and ROE are not meaningful; Value Score adjusted."))
+
+    # 2. Very high debt (net_debt > 2× market_cap)
+    mktcap_bn = r.get("market_cap") or 0
+    net_debt_bn = r.get("net_debt") or 0
+    if mktcap_bn > 0 and net_debt_bn > 2.0 * mktcap_bn:
+        ratio = net_debt_bn / mktcap_bn
+        warns.append(("🔴", "Very high debt",
+            f"Net debt is {ratio:.1f}× market cap. "
+            "Company is highly leveraged – DCF result sensitive to assumptions."))
+
+    # 3. Only 1–2 positive FCF years
+    fcf_note = r.get("fcf_note") or ""
+    if "1 positive" in fcf_note or "2 positive" in fcf_note or "avg of 1" in fcf_note or "avg of 2" in fcf_note:
+        warns.append(("🔴", "Insufficient FCF history",
+            "Fewer than 3 positive FCF years available – DCF result is highly uncertain."))
+
+    # 4. Growth premium gap (price > 2.5× intrinsic AND P/E < 40)
+    intrinsic = r.get("intrinsic") or 0
+    price     = r.get("price") or 0
+    pe        = r.get("pe") or 0
+    if intrinsic > 0 and price > 2.5 * intrinsic and 0 < pe < 40:
+        ratio = price / intrinsic
+        warns.append(("⚠️", "Growth premium not captured",
+            f"Market trades at {ratio:.1f}× our DCF value. "
+            "Market is pricing in significantly higher future growth than the model assumes."))
+
+    # 5. Cyclical sector
+    if r.get("sector") in CYCLICAL_SECTORS:
+        warns.append(("⚠️", "Cyclical sector",
+            f"{r['sector']} earnings vary with the business cycle. "
+            "FCF may be at cycle peak – DCF could overstate normalised earning power."))
+
+    # 6. Currency conversion applied
+    if r.get("fx_converted"):
+        warns.append(("⚠️", "Currency conversion applied",
+            f"Financials reported in {r.get('fx_from')}, converted to {r.get('fx_to')} "
+            f"at {r.get('fx_rate', 1):.4f}. Exchange-rate moves affect the result."))
+
+    # 7. Terminal growth capped
+    if r.get("terminal_capped"):
+        warns.append(("⚠️", "Terminal growth rate capped",
+            f"Your input of {r.get('terminal_original', 0):.1f}% was reduced to "
+            f"{r.get('terminal_assumption', 0):.1f}% based on sector limits. "
+            f"{r.get('terminal_desc', '')}"))
+
+    return warns
+
+
 def check_terminal_value(tv_disc_bn, ebitda_bn, wacc, terminal_growth):
     """Plausibility checks for terminal value. Returns (warnings, implied_multiple)."""
     warnings       = []
@@ -1114,31 +1183,15 @@ elif page == "🔍 Analysis":
         st.subheader(f"{r['name']} ({r['symbol']})")
         st.caption(f"Sector: {r['sector']}  ·  Last updated: {r.get('last_updated','')}")
 
-        # --- FX conversion warning ---
-        if r.get("fx_converted"):
-            st.warning(
-                f"⚠️ Currency conversion applied: FCF and balance sheet reported in "
-                f"**{r['fx_from']}**, stock trades in **{r['fx_to']}**.  \n"
-                f"All financial values converted at **1 {r['fx_from']} = {r['fx_rate']:.4f} {r['fx_to']}**."
-            )
-
-        # --- Negative equity warnings ---
-        if r.get("neg_equity_warning"):
-            st.error(r["neg_equity_warning"])
-        elif r.get("neg_book_equity"):
-            st.warning(
-                "⚠️ This company has **negative book equity** (stockholders' equity < 0), "
-                "typically from aggressive share buybacks or large dividend payouts. "
-                "P/B ratio and ROE are not meaningful – Value Score adjusted accordingly."
-            )
-
-        # --- Terminal growth cap warning ---
-        if r.get("terminal_capped"):
-            st.warning(
-                f"⚠️ Terminal growth capped at **{r['terminal_assumption']:.1f}%** "
-                f"(your input {r['terminal_original']:.1f}% exceeded the sector limit). "
-                f"{r.get('terminal_desc', '')}"
-            )
+        # --- Automatic warning flags ---
+        warnings_list = generate_warnings(r)
+        if warnings_list:
+            with st.expander(f"⚠️ {len(warnings_list)} warning{'s' if len(warnings_list) > 1 else ''} – click to expand", expanded=True):
+                for icon, title, explanation in warnings_list:
+                    if icon == "🔴":
+                        st.error(f"**{icon} {title}** – {explanation}")
+                    else:
+                        st.warning(f"**{icon} {title}** – {explanation}")
 
         # --- Cost of debt estimation notice ---
         if r.get("cost_debt_estimated"):
