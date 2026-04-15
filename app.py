@@ -580,30 +580,62 @@ def calculate_realistic_growth(symbol, info, cashflow):
 
 _fmp_cache: dict = {}
 
+def _fmp_symbol(symbol):
+    """Normalise ticker for FMP: strip exchange suffix (SAP.DE → SAP)."""
+    return symbol.split(".")[0] if "." in symbol else symbol
+
+
+def _fmp_fetch(sym_fmp, endpoint_tpl):
+    """
+    Hit one FMP endpoint, return parsed dcf float or None.
+    Logs failures to stdout (visible in Streamlit Cloud logs).
+    """
+    url = endpoint_tpl.format(symbol=sym_fmp, key=FMP_API_KEY)
+    try:
+        resp = requests.get(url, timeout=6)
+        print(f"[FMP] GET {url.replace(FMP_API_KEY, '***')} → {resp.status_code}")
+        if resp.status_code != 200:
+            print(f"[FMP] non-200 body: {resp.text[:200]}")
+            return None
+        data = resp.json()
+        print(f"[FMP] response: {str(data)[:200]}")
+        # Auth / plan error: {"Error Message": "..."}
+        if isinstance(data, dict) and "Error Message" in data:
+            print(f"[FMP] API error: {data['Error Message']}")
+            return None
+        if isinstance(data, list) and data and "dcf" in data[0]:
+            return round(float(data[0]["dcf"]), 2)
+    except Exception as exc:
+        print(f"[FMP] exception: {exc}")
+    return None
+
+
 def get_fmp_dcf(symbol):
-    """Fetch FMP's independent DCF intrinsic value. Returns float or None."""
+    """
+    Fetch FMP's independent DCF intrinsic value.
+    Tries primary endpoint first, falls back to legacy company endpoint.
+    Returns (float, source_label) or (None, reason_string).
+    """
     if not FMP_API_KEY:
-        return None
+        return None, "no_key"
     now = datetime.now()
     cached = _fmp_cache.get(symbol)
     if cached and (now - cached["fetched_at"]).total_seconds() < 3600:
-        return cached["value"]
-    try:
-        url = (
-            f"https://financialmodelingprep.com/api/v3/discounted-cash-flow/"
-            f"{symbol}?apikey={FMP_API_KEY}"
-        )
-        resp = requests.get(url, timeout=5)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data and isinstance(data, list) and "dcf" in data[0]:
-                value = round(float(data[0]["dcf"]), 2)
-                _fmp_cache[symbol] = {"value": value, "fetched_at": now}
-                return value
-    except Exception:
-        pass
-    _fmp_cache[symbol] = {"value": None, "fetched_at": now}
-    return None
+        return cached["value"], cached.get("source", "cache")
+
+    sym_fmp = _fmp_symbol(symbol)
+    primary  = "https://financialmodelingprep.com/api/v3/discounted-cash-flow/{symbol}?apikey={key}"
+    fallback = "https://financialmodelingprep.com/api/v3/company/discounted-cash-flow/{symbol}?apikey={key}"
+
+    value = _fmp_fetch(sym_fmp, primary)
+    source = "FMP DCF"
+    if value is None:
+        print(f"[FMP] primary empty for {sym_fmp}, trying fallback endpoint")
+        value = _fmp_fetch(sym_fmp, fallback)
+        source = "FMP company DCF"
+
+    _fmp_cache[symbol] = {"value": value, "source": source, "fetched_at": now}
+    return value, source
 
 
 def validate_dcf(our_value, fmp_value):
@@ -1311,21 +1343,22 @@ elif page == "🔍 Analysis":
         with vcol1:
             if FMP_API_KEY:
                 with st.spinner("Fetching FMP independent DCF…"):
-                    fmp_val = get_fmp_dcf(r["symbol"])
+                    fmp_val, fmp_src = get_fmp_dcf(r["symbol"])
                 validation = validate_dcf(our_base, fmp_val)
                 if fmp_val and validation:
                     label, diff_pct = validation
                     st.markdown(
                         f"| | |\n|---|---|\n"
                         f"| **Our Tool (Base)** | ${our_base:.2f} |\n"
-                        f"| **FMP Independent** | ${fmp_val:.2f} |\n"
+                        f"| **{fmp_src}** | ${fmp_val:.2f} |\n"
                         f"| **Difference** | {diff_pct:.1f}%  {label} |"
                     )
-                elif fmp_val is None:
-                    st.caption("FMP API returned no data for this symbol.")
-                    st.metric("Our Tool (Base)", f"${our_base:.2f}")
                 else:
                     st.metric("Our Tool (Base)", f"${our_base:.2f}")
+                    st.caption(
+                        f"FMP data not available for **{r['symbol']}** – "
+                        "use external links below to cross-check manually."
+                    )
             else:
                 st.metric("Our Tool (Base)", f"${our_base:.2f}")
                 st.caption("Add `FMP_API_KEY` to Streamlit secrets for an independent FMP cross-check.")
