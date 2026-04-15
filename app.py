@@ -724,6 +724,23 @@ def _dcf_intrinsic(fcf, shares, net_debt, growth, wacc, terminal):
     return equity / shares
 
 
+def reverse_dcf(price, fcf, wacc, terminal, shares, net_debt):
+    """Binary search for FCF growth rate that makes DCF intrinsic value = current price."""
+    if shares == 0 or price <= 0 or fcf <= 0:
+        return None
+    lo, hi = -0.10, 0.50
+    for _ in range(50):
+        mid = (lo + hi) / 2
+        iv  = _dcf_intrinsic(fcf, shares, net_debt, mid, wacc, terminal)
+        if iv is None:
+            return None
+        if iv < price:
+            lo = mid
+        else:
+            hi = mid
+    return round((lo + hi) / 2 * 100, 1)
+
+
 def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_override=None):
     try:
         ticker     = yf.Ticker(symbol)
@@ -1304,6 +1321,32 @@ elif page == "🔍 Analysis":
                 margin=dict(t=50, b=20)
             )
             st.plotly_chart(fig_sc, use_container_width=True)
+
+        # --- Reverse DCF box ---
+        st.divider()
+        _r_fcf   = r["fcf"] * 1e9   # back to raw units
+        _r_nd    = r["net_debt"] * 1e9
+        _r_sh    = r["shares"] * 1e9
+        _r_wacc  = r["wacc"] / 100
+        _r_term  = r["terminal_assumption"] / 100
+        implied_g = reverse_dcf(r["price"], _r_fcf, _r_wacc, _r_term, _r_sh, _r_nd)
+        our_g     = r["growth_assumption"]
+        if implied_g is not None:
+            diff = implied_g - our_g
+            if diff > 5:
+                interp = "Market expects significantly higher growth than our model. Stock may be fairly valued if growth materializes."
+            elif diff < -5:
+                interp = "Market expects lower growth than our model. Our DCF may be optimistic."
+            else:
+                interp = "Market and our model broadly agree on growth expectations."
+            st.markdown(
+                f"**📊 Market Implied Growth**\n\n"
+                f"The current price of **${r['price']:.2f}** implies a FCF growth rate of **{implied_g:.1f}%**.\n\n"
+                f"Our model assumes **{our_g:.1f}%**.\n\n"
+                f"→ {interp}"
+            )
+        else:
+            st.markdown("**📊 Market Implied Growth** – could not be computed (price outside model range).")
 
         # --- DCF Validation box ---
         st.divider()
