@@ -1341,6 +1341,9 @@ elif page == "🔍 Analysis":
 
         vcol1, vcol2 = st.columns([1, 1])
         with vcol1:
+            st.write(f"[DEBUG] FMP key present: {bool(FMP_API_KEY)}")
+            st.write(f"[DEBUG] Key starts with: {FMP_API_KEY[:4] if FMP_API_KEY else 'EMPTY'}")
+            st.write(f"[DEBUG] Calling FMP for {r['symbol']}")
             if FMP_API_KEY:
                 with st.spinner("Fetching FMP independent DCF…"):
                     fmp_val, fmp_src = get_fmp_dcf(r["symbol"])
