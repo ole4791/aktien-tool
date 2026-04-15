@@ -19,7 +19,6 @@ st.set_page_config(
 # ================================================================
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
 GITHUB_REPO  = st.secrets.get("GITHUB_REPO", "")
-FMP_API_KEY  = st.secrets.get("FMP_API_KEY", "")
 DB_FILE      = "datenbank.json"
 PORT_FILE    = "portfolio.json"
 
@@ -576,79 +575,6 @@ def calculate_realistic_growth(symbol, info, cashflow):
 
     weighted = sum(r * w for r, w in zip(rates, weights)) / sum(weights)
     return round(weighted * 0.80, 4), sources  # 20% conservative haircut
-
-
-_fmp_cache: dict = {}
-
-def _fmp_symbol(symbol):
-    """Normalise ticker for FMP: strip exchange suffix (SAP.DE → SAP)."""
-    return symbol.split(".")[0] if "." in symbol else symbol
-
-
-def _fmp_fetch(sym_fmp, endpoint_tpl):
-    """
-    Hit one FMP endpoint, return parsed dcf float or None.
-    Logs failures to stdout (visible in Streamlit Cloud logs).
-    """
-    url = endpoint_tpl.format(symbol=sym_fmp, key=FMP_API_KEY)
-    try:
-        resp = requests.get(url, timeout=6)
-        print(f"[FMP] GET {url.replace(FMP_API_KEY, '***')} → {resp.status_code}")
-        if resp.status_code != 200:
-            print(f"[FMP] non-200 body: {resp.text[:200]}")
-            return None
-        data = resp.json()
-        print(f"[FMP] response: {str(data)[:200]}")
-        # Auth / plan error: {"Error Message": "..."}
-        if isinstance(data, dict) and "Error Message" in data:
-            print(f"[FMP] API error: {data['Error Message']}")
-            return None
-        if isinstance(data, list) and data and "dcf" in data[0]:
-            return round(float(data[0]["dcf"]), 2)
-    except Exception as exc:
-        print(f"[FMP] exception: {exc}")
-    return None
-
-
-def get_fmp_dcf(symbol):
-    """
-    Fetch FMP's independent DCF intrinsic value.
-    Tries primary endpoint first, falls back to legacy company endpoint.
-    Returns (float, source_label) or (None, reason_string).
-    """
-    if not FMP_API_KEY:
-        return None, "no_key"
-    now = datetime.now()
-    cached = _fmp_cache.get(symbol)
-    if cached and (now - cached["fetched_at"]).total_seconds() < 3600:
-        return cached["value"], cached.get("source", "cache")
-
-    sym_fmp = _fmp_symbol(symbol)
-    primary  = "https://financialmodelingprep.com/api/v3/discounted-cash-flow/{symbol}?apikey={key}"
-    fallback = "https://financialmodelingprep.com/api/v3/company/discounted-cash-flow/{symbol}?apikey={key}"
-
-    value = _fmp_fetch(sym_fmp, primary)
-    source = "FMP DCF"
-    if value is None:
-        print(f"[FMP] primary empty for {sym_fmp}, trying fallback endpoint")
-        value = _fmp_fetch(sym_fmp, fallback)
-        source = "FMP company DCF"
-
-    _fmp_cache[symbol] = {"value": value, "source": source, "fetched_at": now}
-    return value, source
-
-
-def validate_dcf(our_value, fmp_value):
-    """Compare our Base DCF against FMP. Returns (label, diff_pct) or None."""
-    if not fmp_value or not our_value:
-        return None
-    diff_pct = abs(our_value - fmp_value) / fmp_value * 100
-    if diff_pct < 20:
-        return "✅ Consistent", diff_pct
-    elif diff_pct < 50:
-        return "⚠️ Some divergence", diff_pct
-    else:
-        return "🔴 Large divergence – verify inputs", diff_pct
 
 
 CYCLICAL_SECTORS = {"Industrials", "Energy", "Materials", "Consumer Cyclical"}
@@ -1336,50 +1262,14 @@ elif page == "🔍 Analysis":
 
         # --- DCF Validation box ---
         st.divider()
-        st.markdown("#### 🔍 DCF Validation")
-        our_base = r.get("intrinsic", 0)
-
-        vcol1, vcol2 = st.columns([1, 1])
-        with vcol1:
-            st.write(f"[DEBUG] FMP key present: {bool(FMP_API_KEY)}")
-            st.write(f"[DEBUG] Key starts with: {FMP_API_KEY[:4] if FMP_API_KEY else 'EMPTY'}")
-            st.write(f"[DEBUG] Calling FMP for {r['symbol']}")
-            if FMP_API_KEY:
-                import requests as _req
-                _test_url = f"https://financialmodelingprep.com/api/v3/discounted-cash-flow/AAPL?apikey={FMP_API_KEY}"
-                _test_r   = _req.get(_test_url, timeout=10)
-                st.write(f"[DEBUG] FMP status: {_test_r.status_code}")
-                st.write(f"[DEBUG] FMP response: {_test_r.text[:300]}")
-            if FMP_API_KEY:
-                with st.spinner("Fetching FMP independent DCF…"):
-                    fmp_val, fmp_src = get_fmp_dcf(r["symbol"])
-                validation = validate_dcf(our_base, fmp_val)
-                if fmp_val and validation:
-                    label, diff_pct = validation
-                    st.markdown(
-                        f"| | |\n|---|---|\n"
-                        f"| **Our Tool (Base)** | ${our_base:.2f} |\n"
-                        f"| **{fmp_src}** | ${fmp_val:.2f} |\n"
-                        f"| **Difference** | {diff_pct:.1f}%  {label} |"
-                    )
-                else:
-                    st.metric("Our Tool (Base)", f"${our_base:.2f}")
-                    st.caption(
-                        f"FMP data not available for **{r['symbol']}** – "
-                        "use external links below to cross-check manually."
-                    )
-            else:
-                st.metric("Our Tool (Base)", f"${our_base:.2f}")
-                st.caption("Add `FMP_API_KEY` to Streamlit secrets for an independent FMP cross-check.")
-
-        with vcol2:
-            sym = r["symbol"].split(".")[0]   # strip exchange suffix for URL construction
-            st.markdown("**Cross-check manually:**")
-            st.markdown(
-                f"[Alpha Spread ↗](https://www.alphaspread.com/security/nyse/{sym}/dcf-valuation)  \n"
-                f"[GuruFocus ↗](https://www.gurufocus.com/stock/{r['symbol']}/dcf)  \n"
-                f"[Simply Wall St ↗](https://simplywall.st/stocks/us/-/-{sym}/valuation)"
-            )
+        st.markdown("#### 🔍 Cross-check this valuation externally:")
+        sym = r["symbol"].split(".")[0]   # strip exchange suffix for URL construction
+        st.markdown(
+            f"[Alpha Spread ↗](https://www.alphaspread.com/security/nyse/{sym}/summary)  "
+            f"· [GuruFocus ↗](https://www.gurufocus.com/stock/{r['symbol']}/dcf)  "
+            f"· [Simply Wall St ↗](https://simplywall.st/stocks/us/-/-{sym}/valuation)  "
+            f"· [Macrotrends ↗](https://www.macrotrends.net/stocks/charts/{sym}/free-cash-flow)"
+        )
 
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📊 Key Metrics", "💰 FCF & Cashflows",
