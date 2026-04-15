@@ -2022,9 +2022,12 @@ elif page == "🔄 Batch Analysis":
     st.title("Batch Analysis")
     st.write("Automatically analyze many stocks and save them to the database.")
 
+    b_auto_growth = st.checkbox("Use automatic per-stock growth rate (recommended)", value=True)
     col1, col2, col3 = st.columns(3)
     with col1:
-        b_growth   = st.slider("FCF Growth %", 0, 15, 6) / 100
+        b_growth_override = st.slider("Override Growth Rate %", 0, 15, 6) / 100
+        if b_auto_growth:
+            st.caption("Automatic rate active – slider ignored")
     with col2:
         b_terminal = st.slider("Terminal Growth % (max)", 1, 5, 2) / 100
         st.caption("Sector-aware caps applied per stock (e.g. tobacco ≤ 1.5%, energy ≤ 2.0%)")
@@ -2052,7 +2055,8 @@ elif page == "🔄 Batch Analysis":
                     time.sleep(wait_s)
                     status.text(f"[{i+1}/{len(selection)}] Retrying {symbol} (attempt {attempt+1})...")
                 try:
-                    result, error = run_dcf(symbol, b_growth, b_terminal, b_mos)
+                    growth_arg = None if b_auto_growth else b_growth_override
+                    result, error = run_dcf(symbol, growth_arg, b_terminal, b_mos)
                     rate_limited = error and any(k in str(error).lower() for k in ["429", "too many requests", "rate"])
                     if rate_limited:
                         result = None
