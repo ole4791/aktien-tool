@@ -92,81 +92,64 @@ if st.session_state.last_result is not None:
 # ================================================================
 # VALUE UNIVERSE
 # ================================================================
-VALUE_UNIVERSE = [
-    "KO","PEP","PG","CL","GIS","K","MKC","SJM","CAG","HRL",
-    "MCD","YUM","DPZ","CMG","WMT","COST","TGT","KR","SYY","MO",
-    "JNJ","ABT","MDT","SYK","BSX","BDX","ZBH","EW","ISRG","RMD",
-    "PFE","MRK","LLY","ABBV","BMY","AMGN","GILD","BIIB","REGN","VRTX",
-    "CVS","UNH","HUM","CI","ELV","MCK","CAH","ABC","MOH","CNC",
-    "MMM","HON","GE","CAT","DE","EMR","ITW","ETN","PH","ROK",
-    "DOV","AME","FTV","XYL","GNRC","ROP","IDEX","IR","TT","CARR",
-    "UPS","FDX","CSX","NSC","UNP","WAB","EXPD","CHRW","JBHT","ODFL",
-    "AAPL","MSFT","CSCO","IBM","ORCL","TXN","QCOM","ADI","KLAC","LRCX",
-    "AMAT","MSI","CTSH","ACN","INTU","PAYX","ADP","FISV","FIS","GPN",
-    "BRK-B","JPM","BAC","WFC","USB","TFC","PNC","MTB","CFG","FITB",
-    "AXP","V","MA","DFS","COF","SYF","AIG","PRU","MET","AFL",
-    "BLK","TROW","BEN","IVZ","AMG","WTW","AON","MMC","CB","TRV",
-    "XOM","CVX","COP","SLB","HAL","BKR","PSX","VLO","MPC","PXD",
-    "EOG","DVN","MRO","OXY","HES","EQT",
-    "NEE","DUK","SO","D","AEP","EXC","SRE","XEL","ES","ETR",
-    "AMT","PLD","CCI","EQIX","PSA","O","SPG","WELL","AVB","EQR",
-    "SAP.DE","SIE.DE","ALV.DE","MUV2.DE","BMW.DE","MBG.DE","VOW3.DE",
-    "BAS.DE","BAYN.DE","DBK.DE","DTE.DE","RWE.DE","HEN3.DE","ADS.DE","IFX.DE",
-    "SHEL.L","BP.L","HSBA.L","AZN.L","GSK.L","ULVR.L","DGE.L","BATS.L",
-    "NESN.SW","NOVN.SW","ROG.SW","ZURN.SW","ABBN.SW",
-    "ASML.AS","INGA.AS","PHIA.AS","HEIA.AS",
-    "OR.PA","TTE.PA","SAN.PA","BNP.PA","AIR.PA","MC.PA",
-    "7203.T","6758.T","9432.T","8306.T","4502.T",
-]
-
 INDEX_GROUPS = {
     "⭐ Featured Stocks": [
-        "NVDA","TSLA","UNH","NVO","PYPL","CEG","DTE.DE","BABA","JD","IRDM",
+        "NVDA","TSLA","UNH","PYPL","IRDM","AAPL","MSFT","META","GOOGL","AMZN",
     ],
-    "🇺🇸 S&P 500 – Consumer": [
-        "KO","PEP","PG","CL","GIS","K","MKC","SJM","CAG","HRL",
-        "MCD","YUM","DPZ","CMG","WMT","COST","TGT","KR","SYY","MO",
+    "S&P 500 – Consumer Staples": [
+        "KO","PEP","PG","CL","GIS","MKC","SJM","CAG","HRL",
+        "MO","PM","KR","SYY","TSN","K","MDLZ","CPB",
     ],
-    "🇺🇸 S&P 500 – Healthcare": [
-        "JNJ","ABT","MDT","SYK","BSX","BDX","ZBH","EW","ISRG","RMD",
-        "PFE","MRK","LLY","ABBV","BMY","AMGN","GILD","BIIB","REGN","VRTX",
-        "CVS","UNH","HUM","CI","ELV","MCK","CAH","ABC","MOH","CNC",
+    "S&P 500 – Healthcare": [
+        "JNJ","ABT","MDT","PFE","MRK","LLY","ABBV","BMY",
+        "AMGN","GILD","BIIB","REGN","VRTX","ELV","UNH",
+        "HUM","CI","MOH","CNC","CVS","MCK","CAH","ABC",
+        "ZBH","BDX","BSX","SYK","EW","RMD","ISRG",
     ],
-    "🇺🇸 S&P 500 – Industrials": [
-        "MMM","HON","GE","CAT","DE","EMR","ITW","ETN","PH","ROK",
-        "DOV","AME","FTV","XYL","GNRC","ROP","IDEX","IR","TT","CARR",
-        "UPS","FDX","CSX","NSC","UNP","WAB","EXPD","CHRW","JBHT","ODFL",
+    "S&P 500 – Technology (Profitable)": [
+        "AAPL","MSFT","CSCO","IBM","ORCL","TXN","QCOM",
+        "ADI","KLAC","LRCX","AMAT","MSI","INTU","PAYX",
+        "ADP","FISV","FIS","GPN","PYPL","V","MA","AXP",
     ],
-    "🇺🇸 S&P 500 – Technology": [
-        "AAPL","MSFT","CSCO","IBM","ORCL","TXN","QCOM","ADI","KLAC","LRCX",
-        "AMAT","MSI","CTSH","ACN","INTU","PAYX","ADP","FISV","FIS","GPN",
+    "S&P 500 – Industrials (Stable)": [
+        "MMM","HON","EMR","ITW","ETN","PH","ROK","DOV",
+        "AME","FTV","XYL","ROP","IDEX","IR","TT","CARR",
+        "UPS","FDX","CSX","NSC","UNP","EXPD","CHRW",
+        "JBHT","ODFL","WAB",
     ],
-    "🇺🇸 S&P 500 – Financials": [
-        "BRK-B","JPM","BAC","WFC","USB","TFC","PNC","MTB","CFG","FITB",
-        "AXP","V","MA","DFS","COF","SYF","AIG","PRU","MET","AFL",
-        "BLK","TROW","BEN","IVZ","AMG","WTW","AON","MMC","CB","TRV",
+    "S&P 500 – Communication & Media": [
+        "GOOGL","META","NFLX","DIS","CMCSA","VZ","T",
+        "CHTR","TMUS","OMC","IPG","NWSA",
     ],
-    "🇺🇸 S&P 500 – Energy & Utilities": [
-        "XOM","CVX","COP","SLB","HAL","BKR","PSX","VLO","MPC","PXD",
-        "EOG","DVN","MRO","OXY","HES","EQT",
-        "NEE","DUK","SO","D","AEP","EXC","SRE","XEL","ES","ETR",
-        "AMT","PLD","CCI","EQIX","PSA","O","SPG","WELL","AVB","EQR",
+    "S&P 500 – Consumer Discretionary (Profitable)": [
+        "MCD","YUM","DPZ","CMG","SBUX","NKE","TJX",
+        "ROST","BBY","WHR","MHK","TPR","RL",
     ],
-    "🇩🇪 DAX": [
-        "SAP.DE","SIE.DE","ALV.DE","MUV2.DE","BMW.DE","MBG.DE","VOW3.DE",
-        "BAS.DE","BAYN.DE","DBK.DE","DTE.DE","RWE.DE","HEN3.DE","ADS.DE","IFX.DE",
+    "S&P 500 – Energy (Major)": [
+        "XOM","CVX","COP","EOG","DVN","MRO","OXY",
+        "HES","PSX","VLO","MPC","PXD",
     ],
-    "🌍 Europe": [
-        "SHEL.L","BP.L","HSBA.L","AZN.L","GSK.L","ULVR.L","DGE.L","BATS.L",
-        "NESN.SW","NOVN.SW","ROG.SW","ZURN.SW","ABBN.SW",
-        "ASML.AS","INGA.AS","PHIA.AS","HEIA.AS",
-        "OR.PA","TTE.PA","SAN.PA","BNP.PA","AIR.PA","MC.PA",
+    "S&P 500 – Utilities (Stable FCF)": [
+        "NEE","DUK","SO","D","AEP","EXC","SRE","XEL",
+        "ES","ETR","WEC","DTE","PPL","EIX","AES",
     ],
-    "🌏 Asia": [
-        "7203.T","6758.T","9432.T","8306.T","4502.T",
+    "NASDAQ – Quality Growth": [
+        "NVDA","AVGO","AMD","AMAT","LRCX","KLAC",
+        "MRVL","SNPS","CDNS","ANSS","FTNT","PANW",
+        "CRM","NOW","WDAY","ADBE","TEAM","ZM","DOCU",
     ],
-    "🌐 Full Universe": VALUE_UNIVERSE,
+    "NYSE – Mid Cap Value": [
+        "MOS","FMC","CF","NUE","STLD","RS","ATI",
+        "PKG","IP","SON","SEE","BMS",
+    ],
 }
+
+# Flat list of all unique symbols for full-universe batch runs
+VALUE_UNIVERSE = list(dict.fromkeys(
+    s for group in INDEX_GROUPS.values() for s in group
+))
+
+INDEX_GROUPS["🌐 Full Universe"] = VALUE_UNIVERSE
 
 # Traditional banks and insurers where DCF truly doesn't apply
 DCF_EXEMPT = {
@@ -2046,8 +2029,49 @@ elif page == "🔄 Batch Analysis":
         errors    = []
         successes = 0
 
+        skipped = []
+
         for i, symbol in enumerate(selection):
             status.text(f"[{i+1}/{len(selection)}] Analyzing {symbol}...")
+
+            # --- Pre-flight validation ---
+            try:
+                _pre = yf.Ticker(symbol)
+                _info = _pre.info or {}
+                _cf   = _pre.cashflow
+
+                # 1. USD only
+                fin_ccy = (_info.get("financialCurrency") or "").upper()
+                if fin_ccy and fin_ccy != "USD":
+                    skipped.append(f"{symbol}: non-USD financials ({fin_ccy})")
+                    progress.progress((i + 1) / len(selection))
+                    time.sleep(1.0)
+                    continue
+
+                # 2. No banks/insurers/REITs unless in DCF_APPLICABLE
+                _sector = _info.get("sector", "")
+                if _sector in ("Financial Services", "Real Estate") and symbol not in DCF_APPLICABLE:
+                    skipped.append(f"{symbol}: sector not suitable for DCF ({_sector})")
+                    progress.progress((i + 1) / len(selection))
+                    time.sleep(1.0)
+                    continue
+
+                # 3. Require at least 2 positive FCF years out of last 4
+                if "Free Cash Flow" in _cf.index:
+                    _fcf_vals = [float(v) for v in _cf.loc["Free Cash Flow"].values[:4]
+                                 if v == v]
+                    _pos = sum(1 for v in _fcf_vals if v > 0)
+                    if len(_fcf_vals) >= 2 and _pos < 2:
+                        skipped.append(f"{symbol}: fewer than 2 positive FCF years in last 4 ({_pos}/{ len(_fcf_vals)})")
+                        progress.progress((i + 1) / len(selection))
+                        time.sleep(1.0)
+                        continue
+            except Exception as _pre_ex:
+                skipped.append(f"{symbol}: pre-flight error – {_pre_ex}")
+                progress.progress((i + 1) / len(selection))
+                time.sleep(1.0)
+                continue
+
             result, error = None, None
             for attempt, wait_s in enumerate([0, 30, 60]):
                 if wait_s > 0:
@@ -2100,8 +2124,12 @@ elif page == "🔄 Batch Analysis":
             st.success(f"✅ {successes} stocks analyzed and saved permanently!")
         else:
             st.warning(f"✅ {successes} stocks analyzed but save failed.")
+        if skipped:
+            with st.expander(f"⏭️ {len(skipped)} stocks skipped (pre-flight)"):
+                for s in skipped:
+                    st.write(s)
         if errors:
-            with st.expander("Skipped stocks"):
+            with st.expander(f"❌ {len(errors)} stocks failed"):
                 for e in errors:
                     st.write(e)
         st.info("Go to the Dashboard to see your results.")

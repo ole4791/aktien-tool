@@ -444,6 +444,30 @@ GITHUB_REPO  = "username/aktien-tool"
 FMP_API_KEY  = "your_fmp_key"   ← new, get free at financialmodelingprep.com
 ```
 
+### Stock Universe Policy (as of 2026-04-19)
+
+**USD-only:** All non-USD stocks (.DE, .L, .SW, .AS, .PA, .T) and Chinese ADRs
+(BABA, JD, BIDU, NIO) have been removed from VALUE_UNIVERSE and all INDEX_GROUPS.
+
+**DCF-unsuitable stocks removed:**
+- Banks: JPM, BAC, WFC, GS, MS, C, USB, TFC, PNC, MTB, CFG, FITB
+- Insurance: AIG, PRU, MET, AFL, CB, TRV, BRK-B
+- REITs: AMT, PLD, CCI, EQIX, PSA, O, SPG, WELL, AVB, EQR
+- Loss-making: UBER, LYFT, SNAP, PINS, RIVN, LCID
+- Volatile Utilities: CEG
+- Pure Commodities: SLB, HAL, BKR
+
+**Batch pre-flight validation (enforced in loop):**
+1. Skip if `financialCurrency != "USD"`
+2. Skip if `sector in ["Financial Services", "Real Estate"]` and not in `DCF_APPLICABLE`
+3. Skip if positive FCF years < 2 out of last 4 years
+All skipped stocks are logged with reason in a collapsible expander.
+
+**INDEX_GROUPS structure (11 groups + Full Universe):**
+Consumer Staples · Healthcare · Technology (Profitable) · Industrials (Stable) ·
+Communication & Media · Consumer Discretionary (Profitable) · Energy (Major) ·
+Utilities (Stable FCF) · NASDAQ Quality Growth · NYSE Mid Cap Value · Full Universe
+
 ### Session Start Command
 Read ROADMAP.md and app.py.
 Tell me which Priority 0 items are still open.
