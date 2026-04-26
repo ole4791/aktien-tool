@@ -1331,20 +1331,9 @@ elif page == "🔍 Analysis":
         else:
             st.markdown("**📊 Market Implied Growth** – could not be computed (price outside model range).")
 
-        # --- DCF Validation box ---
-        st.divider()
-        st.markdown("#### 🔍 Cross-check this valuation externally:")
-        sym = r["symbol"].split(".")[0]   # strip exchange suffix for URL construction
-        st.markdown(
-            f"[Alpha Spread ↗](https://www.alphaspread.com/security/nyse/{sym}/summary)  "
-            f"· [GuruFocus ↗](https://www.gurufocus.com/stock/{r['symbol']}/dcf)  "
-            f"· [Simply Wall St ↗](https://simplywall.st/stocks/us/-/-{sym}/valuation)  "
-            f"· [Macrotrends ↗](https://www.macrotrends.net/stocks/charts/{sym}/free-cash-flow)"
-        )
-
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        tab1, tab2, tab3, tab4 = st.tabs([
             "📊 Key Metrics", "💰 FCF & Cashflows",
-            "🔢 DCF Calculation", "⚙️ WACC", "📈 Historical Charts"
+            "🔢 DCF Calculation", "⚙️ WACC"
         ])
 
         with tab1:
@@ -1598,204 +1587,15 @@ elif page == "🔍 Analysis":
                 else:
                     st.write(f"**WACC (used): {r['wacc']}%**")
 
-        with tab5:
-            st.markdown("**Historical Analysis – 10 Years**")
-            period_map = {
-                "1 Year":  "1y",
-                "3 Years": "3y",
-                "5 Years": "5y",
-                "10 Years":"10y",
-                "Max":     "max"
-            }
-            selected_period = st.radio(
-                "Time period",
-                list(period_map.keys()),
-                index=3,
-                horizontal=True,
-                key="hist_period"
-            )
-            period = period_map[selected_period]
-
-            with st.spinner("Loading historical data..."):
-                try:
-                    ticker     = yf.Ticker(r["symbol"])
-                    hist       = ticker.history(period=period)
-                    info_hist  = ticker.info
-                    cashflow_h = ticker.cashflow
-
-                    if hist.empty:
-                        st.warning("No historical data available.")
-                    else:
-                        hist.index = pd.to_datetime(hist.index)
-
-                        # Chart 1: Price History
-                        st.subheader("📉 Price History")
-                        fig_h1 = px.line(
-                            hist, x=hist.index, y="Close",
-                            title=f"{r['name']} – Price History",
-                            labels={"Close": "Price ($)", "index": "Date"},
-                            color_discrete_sequence=["#378ADD"]
-                        )
-                        fig_h1.add_hline(
-                            y=r["intrinsic"],
-                            line_dash="dash",
-                            line_color="#1D9E75",
-                            annotation_text=f"Intrinsic Value ${r['intrinsic']:.2f}",
-                            annotation_position="top left"
-                        )
-                        fig_h1.add_hline(
-                            y=r["with_margin"],
-                            line_dash="dot",
-                            line_color="#EF9F27",
-                            annotation_text=f"With MoS ${r['with_margin']:.2f}",
-                            annotation_position="bottom left"
-                        )
-                        fig_h1.update_layout(height=400)
-                        st.plotly_chart(fig_h1, use_container_width=True)
-                        st.caption("Green dashed = intrinsic value · Orange dotted = max buy price with margin of safety")
-
-                        st.divider()
-
-                        # Chart 2: P/E History
-                        st.subheader("📊 P/E Ratio History")
-                        try:
-                            eps_trail  = info_hist.get("trailingEps")
-                            current_pe = r.get("pe") or 0
-                            if eps_trail and eps_trail > 0:
-                                hist["PE"] = hist["Close"] / eps_trail
-                                fig_h2 = px.line(
-                                    hist, x=hist.index, y="PE",
-                                    title=f"{r['name']} – Estimated P/E Ratio",
-                                    labels={"PE": "P/E Ratio", "index": "Date"},
-                                    color_discrete_sequence=["#7F77DD"]
-                                )
-                                avg_pe = hist["PE"].mean()
-                                fig_h2.add_hline(
-                                    y=avg_pe,
-                                    line_dash="dash",
-                                    line_color="gray",
-                                    annotation_text=f"Avg P/E: {avg_pe:.1f}",
-                                    annotation_position="top left"
-                                )
-                                if current_pe > 0:
-                                    fig_h2.add_hline(
-                                        y=current_pe,
-                                        line_dash="dot",
-                                        line_color="#E24B4A",
-                                        annotation_text=f"Current P/E: {current_pe:.1f}",
-                                        annotation_position="bottom right"
-                                    )
-                                fig_h2.update_layout(height=350)
-                                st.plotly_chart(fig_h2, use_container_width=True)
-                                col1, col2, col3 = st.columns(3)
-                                col1.metric("Current P/E", f"{current_pe:.1f}" if current_pe else "N/A")
-                                col2.metric("Avg P/E",     f"{avg_pe:.1f}")
-                                col3.metric(
-                                    "vs. Average",
-                                    f"{((current_pe/avg_pe)-1)*100:+.1f}%" if current_pe and avg_pe else "N/A",
-                                    delta_color="inverse"
-                                )
-                                if current_pe and avg_pe:
-                                    if current_pe < avg_pe * 0.8:
-                                        st.success("✅ P/E significantly below average – historically cheap")
-                                    elif current_pe < avg_pe:
-                                        st.info("🟡 P/E below average – moderately attractive")
-                                    elif current_pe < avg_pe * 1.2:
-                                        st.warning("🟠 P/E above average – slightly expensive")
-                                    else:
-                                        st.error("🔴 P/E significantly above average – historically expensive")
-                            else:
-                                st.info("P/E history not available – EPS data missing.")
-                        except Exception as pe_err:
-                            st.info(f"P/E history not available: {pe_err}")
-
-                        st.divider()
-
-                        # Chart 3: FCF Development
-                        st.subheader("💰 FCF Development")
-                        try:
-                            if "Free Cash Flow" in cashflow_h.index:
-                                fcf_series = cashflow_h.loc["Free Cash Flow"]
-                                fcf_hist_df = pd.DataFrame({
-                                    "Year":     [str(d)[:4] for d in fcf_series.index],
-                                    "FCF ($B)": [round(v/1e9, 2) for v in fcf_series.values]
-                                }).sort_values("Year")
-                                colors = ["#1D9E75" if v >= 0 else "#E24B4A"
-                                          for v in fcf_hist_df["FCF ($B)"]]
-                                fig_h3 = go.Figure(go.Bar(
-                                    x=fcf_hist_df["Year"],
-                                    y=fcf_hist_df["FCF ($B)"],
-                                    marker_color=colors,
-                                    text=[f"${v:.2f}B" for v in fcf_hist_df["FCF ($B)"]],
-                                    textposition="auto"
-                                ))
-                                fig_h3.update_layout(
-                                    title=f"{r['name']} – Free Cash Flow History",
-                                    yaxis_title="FCF ($B)",
-                                    height=350,
-                                    showlegend=False
-                                )
-                                fig_h3.add_hline(y=0, line_color="gray", line_width=0.5)
-                                st.plotly_chart(fig_h3, use_container_width=True)
-                                pos_fcfs = [v for v in fcf_hist_df["FCF ($B)"] if v > 0]
-                                if len(pos_fcfs) >= 2:
-                                    fcf_trend = ((pos_fcfs[-1]/pos_fcfs[0]) ** (1/(len(pos_fcfs)-1)) - 1) * 100
-                                    col1, col2, col3 = st.columns(3)
-                                    col1.metric("Latest FCF",     f"${fcf_hist_df['FCF ($B)'].iloc[-1]:.2f}B")
-                                    col2.metric("FCF CAGR",       f"{fcf_trend:+.1f}%")
-                                    col3.metric("Positive Years", f"{len(pos_fcfs)}/{len(fcf_hist_df)}")
-                            else:
-                                st.info("FCF history not available.")
-                        except Exception as fcf_err:
-                            st.info(f"FCF history not available: {fcf_err}")
-
-                        st.divider()
-
-                        # Chart 4: Intrinsic Value vs Price
-                        st.subheader("🎯 Intrinsic Value vs. Price")
-                        try:
-                            hist_annual         = hist["Close"].resample("YE").last().reset_index()
-                            hist_annual.columns = ["Date", "Price"]
-                            current_iv          = r["intrinsic"]
-                            growth_rate         = r["growth_assumption"] / 100
-                            years_back          = len(hist_annual)
-                            iv_estimates        = []
-                            for i in range(years_back, 0, -1):
-                                iv_estimates.append(current_iv / ((1 + growth_rate) ** i))
-                            hist_annual["Intrinsic Value"] = iv_estimates[:len(hist_annual)]
-                            fig_h4 = go.Figure()
-                            fig_h4.add_trace(go.Scatter(
-                                x=hist_annual["Date"],
-                                y=hist_annual["Price"],
-                                name="Market Price",
-                                line=dict(color="#378ADD", width=2)
-                            ))
-                            fig_h4.add_trace(go.Scatter(
-                                x=hist_annual["Date"],
-                                y=hist_annual["Intrinsic Value"],
-                                name="Est. Intrinsic Value",
-                                line=dict(color="#1D9E75", width=2, dash="dash")
-                            ))
-                            fig_h4.add_trace(go.Scatter(
-                                x=hist_annual["Date"],
-                                y=[v * (1 - r["mos_assumption"]/100)
-                                   for v in hist_annual["Intrinsic Value"]],
-                                name="With Margin of Safety",
-                                line=dict(color="#EF9F27", width=1.5, dash="dot")
-                            ))
-                            fig_h4.update_layout(
-                                title=f"{r['name']} – Price vs. Estimated Intrinsic Value",
-                                yaxis_title="Price ($)",
-                                height=400,
-                                legend=dict(orientation="h", y=-0.2)
-                            )
-                            st.plotly_chart(fig_h4, use_container_width=True)
-                            st.caption("⚠️ Intrinsic value estimated backwards from current calculation. Use as orientation only.")
-                        except Exception as iv_err:
-                            st.info(f"Intrinsic value chart not available: {iv_err}")
-
-                except Exception as ex:
-                    st.error(f"Error loading historical data: {ex}")
+        st.divider()
+        st.markdown("#### 📈 Charts & More Data")
+        _sym = r["symbol"].split(".")[0]
+        _lnk_col1, _lnk_col2, _lnk_col3, _lnk_col4, _lnk_col5 = st.columns(5)
+        _lnk_col1.link_button("📈 Yahoo Finance", f"https://finance.yahoo.com/chart/{_sym}")
+        _lnk_col2.link_button("📊 Macrotrends FCF", f"https://www.macrotrends.net/stocks/charts/{_sym}/free-cash-flow")
+        _lnk_col3.link_button("🔍 Alpha Spread", f"https://www.alphaspread.com/security/nyse/{_sym}/summary")
+        _lnk_col4.link_button("📉 GuruFocus", f"https://www.gurufocus.com/stock/{r['symbol']}/summary")
+        _lnk_col5.link_button("📋 Simply Wall St", f"https://simplywall.st/stocks/us/-/-{_sym}/valuation")
 
         st.divider()
         if st.button("💾 Save to Database", type="primary", key="save_btn"):
