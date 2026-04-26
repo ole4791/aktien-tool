@@ -97,57 +97,60 @@ INDEX_GROUPS = {
         "NVDA","TSLA","UNH","PYPL","IRDM","AAPL","MSFT","META","GOOGL","AMZN",
     ],
     "S&P 500 – Consumer Staples": [
-        "KO","PEP","PG","CL","GIS","MKC","SJM","CAG","HRL",
-        "MO","PM","KR","SYY","TSN","K","MDLZ","CPB",
+        "KO","PEP","PG","CL","GIS","MKC","SJM","CAG","HRL","MO",
+        "PM","KR","SYY","TSN","K","MDLZ","CPB","CHD","CLX","EL",
+        "HSY","COST","WMT","TGT","DG","DLTR","KHC",
     ],
     "S&P 500 – Healthcare": [
-        "JNJ","ABT","MDT","PFE","MRK","LLY","ABBV","BMY",
-        "AMGN","GILD","BIIB","REGN","VRTX","ELV","UNH",
-        "HUM","CI","MOH","CNC","CVS","MCK","CAH","ABC",
-        "ZBH","BDX","BSX","SYK","EW","RMD","ISRG",
+        "JNJ","ABT","MDT","PFE","MRK","LLY","ABBV","BMY","AMGN",
+        "GILD","BIIB","REGN","VRTX","ELV","UNH","HUM","CI","MOH",
+        "CNC","CVS","MCK","CAH","ABC","ZBH","BDX","BSX","SYK",
+        "EW","RMD","ISRG","HOLX","BAX","DVA","HSIC","VTRS","TFX",
     ],
-    "S&P 500 – Technology (Profitable)": [
-        "AAPL","MSFT","CSCO","IBM","ORCL","TXN","QCOM",
-        "ADI","KLAC","LRCX","AMAT","MSI","INTU","PAYX",
-        "ADP","FISV","FIS","GPN","PYPL","V","MA","AXP",
+    "S&P 500 – Technology": [
+        "AAPL","MSFT","GOOGL","META","NVDA","AVGO","CSCO","IBM",
+        "ORCL","TXN","QCOM","ADI","KLAC","LRCX","AMAT","MSI",
+        "INTU","PAYX","ADP","FISV","FIS","GPN","PYPL","V","MA",
+        "AXP","COF","DFS","SYF","CTSH","ACN","IT","GDDY","AKAM",
+        "CDW","NTAP","SNPS","CDNS","ANSS","PTC","TYL","DELL","HPQ",
     ],
-    "S&P 500 – Industrials (Stable)": [
-        "MMM","HON","EMR","ITW","ETN","PH","ROK","DOV",
-        "AME","FTV","XYL","ROP","IDEX","IR","TT","CARR",
-        "UPS","FDX","CSX","NSC","UNP","EXPD","CHRW",
-        "JBHT","ODFL","WAB",
+    "S&P 500 – Industrials": [
+        "MMM","HON","EMR","ITW","ETN","PH","ROK","DOV","AME",
+        "FTV","XYL","ROP","IDEX","IR","TT","CARR","GE","RTX",
+        "LMT","NOC","GD","BA","TDG","UPS","FDX","CSX","NSC",
+        "UNP","EXPD","CHRW","JBHT","ODFL","WAB","GNRC","SWK","PNR",
     ],
-    "S&P 500 – Communication & Media": [
-        "GOOGL","META","NFLX","DIS","CMCSA","VZ","T",
-        "CHTR","TMUS","OMC","IPG","NWSA",
+    "S&P 500 – Communication": [
+        "GOOGL","META","NFLX","DIS","CMCSA","VZ","T","CHTR",
+        "TMUS","OMC","IPG","NWSA","FOXA","LYV","TTWO","EA",
     ],
-    "S&P 500 – Consumer Discretionary (Profitable)": [
-        "MCD","YUM","DPZ","CMG","SBUX","NKE","TJX",
-        "ROST","BBY","WHR","MHK","TPR","RL",
+    "S&P 500 – Consumer Discretionary": [
+        "MCD","YUM","DPZ","CMG","SBUX","NKE","TJX","ROST",
+        "BBY","TPR","RL","BKNG","EXPE","MAR","HLT","AZO",
+        "ORLY","AAP","GPC","AN","KMX","F","GM","APTV",
     ],
-    "S&P 500 – Energy (Major)": [
-        "XOM","CVX","COP","EOG","DVN","MRO","OXY",
-        "HES","PSX","VLO","MPC","PXD",
+    "S&P 500 – Energy": [
+        "XOM","CVX","COP","EOG","DVN","MRO","OXY","HES",
+        "PSX","VLO","MPC","EQT","CTRA","APA","FANG",
     ],
-    "S&P 500 – Utilities (Stable FCF)": [
-        "NEE","DUK","SO","D","AEP","EXC","SRE","XEL",
-        "ES","ETR","WEC","DTE","PPL","EIX","AES",
+    "S&P 500 – Utilities": [
+        "NEE","DUK","SO","D","AEP","EXC","SRE","XEL","ES",
+        "ETR","WEC","DTE","PPL","EIX","AES","NI","CMS","LNT",
     ],
-    "NASDAQ – Quality Growth": [
-        "NVDA","AVGO","AMD","AMAT","LRCX","KLAC",
-        "MRVL","SNPS","CDNS","ANSS","FTNT","PANW",
-        "CRM","NOW","WDAY","ADBE","TEAM","ZM","DOCU",
-    ],
-    "NYSE – Mid Cap Value": [
-        "MOS","FMC","CF","NUE","STLD","RS","ATI",
-        "PKG","IP","SON","SEE","BMS",
+    "S&P 500 – Materials": [
+        "LIN","APD","ECL","SHW","PPG","NUE","STLD","RS",
+        "PKG","IP","CF","MOS","FMC","ALB","CE","EMN","RPM",
     ],
 }
 
-# Flat list of all unique symbols for full-universe batch runs
-VALUE_UNIVERSE = list(dict.fromkeys(
-    s for group in INDEX_GROUPS.values() for s in group
+# S&P 500 Complete = all sector groups (no Featured, no duplicates)
+_SP500_KEYS = [k for k in INDEX_GROUPS if k != "⭐ Featured Stocks"]
+INDEX_GROUPS["S&P 500 – Complete"] = list(dict.fromkeys(
+    s for k in _SP500_KEYS for s in INDEX_GROUPS[k]
 ))
+
+# Flat list of all unique symbols for full-universe batch runs
+VALUE_UNIVERSE = INDEX_GROUPS["S&P 500 – Complete"]
 
 INDEX_GROUPS["🌐 Full Universe"] = VALUE_UNIVERSE
 
@@ -606,6 +609,34 @@ def calculate_realistic_growth(symbol, info, cashflow):
 
 CYCLICAL_SECTORS = {"Industrials", "Energy", "Materials", "Consumer Cyclical"}
 CYCLICAL_SYMBOLS = {"CAT","DE","ROK","ETN","EMR","DOV","PH","AME","IR","XOM","CVX","COP"}
+
+
+def is_dcf_suitable(symbol, info, cashflow):
+    """Return (suitable: bool, reason: str). Used by batch loop to skip unsuitable stocks."""
+    sector = info.get("sector", "")
+
+    if sector in ("Financial Services", "Real Estate"):
+        if symbol not in DCF_APPLICABLE:
+            return False, "Bank/REIT – DCF not suitable"
+
+    currency     = (info.get("currency") or "USD").upper()
+    fin_currency = (info.get("financialCurrency") or "USD").upper()
+    if currency != "USD" or fin_currency != "USD":
+        return False, f"Non-USD reporting ({fin_currency}) – conversion unreliable"
+
+    if "Free Cash Flow" in cashflow.index:
+        fcf_vals      = [float(v) for v in cashflow.loc["Free Cash Flow"].values[:5] if v == v]
+        positive_years = sum(1 for v in fcf_vals if v > 0)
+        if positive_years < 3:
+            return False, f"Only {positive_years}/5 years positive FCF"
+    else:
+        return False, "No FCF data available"
+
+    mktcap = info.get("marketCap") or 0
+    if mktcap < 2_000_000_000:
+        return False, "Market cap below $2B"
+
+    return True, "✅ Suitable for DCF"
 
 
 def generate_warnings(r):
@@ -1857,40 +1888,19 @@ elif page == "🔄 Batch Analysis":
         for i, symbol in enumerate(selection):
             status.text(f"[{i+1}/{len(selection)}] Analyzing {symbol}...")
 
-            # --- Pre-flight validation ---
+            # --- DCF suitability check ---
             try:
-                _pre = yf.Ticker(symbol)
+                _pre  = yf.Ticker(symbol)
                 _info = _pre.info or {}
                 _cf   = _pre.cashflow
-
-                # 1. USD only
-                fin_ccy = (_info.get("financialCurrency") or "").upper()
-                if fin_ccy and fin_ccy != "USD":
-                    skipped.append(f"{symbol}: non-USD financials ({fin_ccy})")
+                suitable, reason = is_dcf_suitable(symbol, _info, _cf)
+                if not suitable:
+                    skipped.append(f"{symbol}: {reason}")
                     progress.progress((i + 1) / len(selection))
                     time.sleep(1.0)
                     continue
-
-                # 2. No banks/insurers/REITs unless in DCF_APPLICABLE
-                _sector = _info.get("sector", "")
-                if _sector in ("Financial Services", "Real Estate") and symbol not in DCF_APPLICABLE:
-                    skipped.append(f"{symbol}: sector not suitable for DCF ({_sector})")
-                    progress.progress((i + 1) / len(selection))
-                    time.sleep(1.0)
-                    continue
-
-                # 3. Require at least 2 positive FCF years out of last 4
-                if "Free Cash Flow" in _cf.index:
-                    _fcf_vals = [float(v) for v in _cf.loc["Free Cash Flow"].values[:4]
-                                 if v == v]
-                    _pos = sum(1 for v in _fcf_vals if v > 0)
-                    if len(_fcf_vals) >= 2 and _pos < 2:
-                        skipped.append(f"{symbol}: fewer than 2 positive FCF years in last 4 ({_pos}/{ len(_fcf_vals)})")
-                        progress.progress((i + 1) / len(selection))
-                        time.sleep(1.0)
-                        continue
             except Exception as _pre_ex:
-                skipped.append(f"{symbol}: pre-flight error – {_pre_ex}")
+                skipped.append(f"{symbol}: suitability check error – {_pre_ex}")
                 progress.progress((i + 1) / len(selection))
                 time.sleep(1.0)
                 continue
@@ -1943,12 +1953,13 @@ elif page == "🔄 Batch Analysis":
                 _, st.session_state.db_sha = load_database()
 
         status.text("Done!")
+        _msg = f"Analyzed: **{successes} suitable** / Skipped: **{len(skipped)} unsuitable** / Errors: **{len(errors)}**"
         if ok:
-            st.success(f"✅ {successes} stocks analyzed and saved permanently!")
+            st.success(f"✅ {successes} stocks saved permanently! {_msg}")
         else:
-            st.warning(f"✅ {successes} stocks analyzed but save failed.")
+            st.warning(f"✅ {successes} stocks analyzed but save failed. {_msg}")
         if skipped:
-            with st.expander(f"⏭️ {len(skipped)} stocks skipped (pre-flight)"):
+            with st.expander(f"⏭️ {len(skipped)} stocks skipped (not suitable for DCF)"):
                 for s in skipped:
                     st.write(s)
         if errors:
