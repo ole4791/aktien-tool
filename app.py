@@ -1666,17 +1666,39 @@ elif page == "🔍 Analysis":
 elif page == "📊 Database":
     st.title("Database")
 
-    col1, col2 = st.columns([4, 1])
+    col1, col2, col3 = st.columns([3, 1, 1])
     with col2:
         if st.button("🔄 Refresh", key="db_refresh"):
             st.session_state.database, st.session_state.db_sha = load_database()
             st.rerun()
+    with col3:
+        if st.button("🗑️ Reset Database", key="db_reset_btn"):
+            st.session_state["db_reset_confirm"] = True
+
+    if st.session_state.get("db_reset_confirm"):
+        n_entries = len(st.session_state.database)
+        st.warning(f"Are you sure? This will delete all {n_entries} entries.")
+        col_yes, col_no = st.columns([1, 4])
+        with col_yes:
+            if st.button("✅ Confirm Reset", key="db_reset_confirm_btn", type="primary"):
+                st.session_state.database = []
+                with st.spinner("Saving..."):
+                    save_database([], st.session_state.db_sha)
+                    _, st.session_state.db_sha = load_database()
+                st.session_state["db_reset_confirm"] = False
+                st.success("Database cleared successfully.")
+                st.rerun()
+        with col_no:
+            if st.button("Cancel", key="db_reset_cancel"):
+                st.session_state["db_reset_confirm"] = False
+                st.rerun()
 
     if not st.session_state.database:
         st.info("No entries yet. Analyze stocks or run a batch analysis.")
     else:
         df = pd.DataFrame(st.session_state.database)
 
+        # --- Basic filters ---
         col1, col2, col3 = st.columns(3)
         with col1:
             sectors       = ["All"] + sorted(df["Sector"].dropna().unique().tolist())
@@ -1687,6 +1709,20 @@ elif page == "📊 Database":
             sort_by = st.selectbox("Sort by",
                 ["Value Score","Deviation %","P/E","FCF CAGR %","ROE %","Name"])
 
+        # --- Advanced filters ---
+        with st.expander("🔧 Advanced Filters"):
+            afc1, afc2, afc3 = st.columns(3)
+            with afc1:
+                mktcap_filter = st.selectbox("Market Cap",
+                    ["All", "Mega (>$200B)", "Large ($10–200B)", "Mid ($2–10B)"])
+                fcf_positive  = st.checkbox("FCF positive only")
+                undervalued   = st.checkbox("Undervalued only (Deviation % < 0)")
+            with afc2:
+                pe_range = st.slider("P/E range", 0, 60, (0, 60))
+            with afc3:
+                div_min = st.slider("Min Dividend %", 0.0, 10.0, 0.0, step=0.5)
+                roe_min = st.slider("Min ROE %", 0, 50, 0)
+
         filtered = df.copy()
         if sector_filter != "All":
             filtered = filtered[filtered["Sector"] == sector_filter]
@@ -1694,6 +1730,26 @@ elif page == "📊 Database":
             (filtered["Deviation %"] >= dev_range[0]) &
             (filtered["Deviation %"] <= dev_range[1])
         ]
+        if mktcap_filter != "All" and "Market Cap (Bn)" in filtered.columns:
+            mc = filtered["Market Cap (Bn)"].fillna(0)
+            if mktcap_filter == "Mega (>$200B)":
+                filtered = filtered[mc > 200]
+            elif mktcap_filter == "Large ($10–200B)":
+                filtered = filtered[(mc >= 10) & (mc <= 200)]
+            elif mktcap_filter == "Mid ($2–10B)":
+                filtered = filtered[(mc >= 2) & (mc < 10)]
+        if fcf_positive and "FCF (Bn)" in filtered.columns:
+            filtered = filtered[filtered["FCF (Bn)"].fillna(0) > 0]
+        if undervalued:
+            filtered = filtered[filtered["Deviation %"] < 0]
+        if "P/E" in filtered.columns:
+            pe_col = filtered["P/E"].fillna(0)
+            filtered = filtered[(pe_col >= pe_range[0]) & (pe_col <= pe_range[1]) | filtered["P/E"].isna()]
+        if div_min > 0 and "Dividend %" in filtered.columns:
+            filtered = filtered[filtered["Dividend %"].fillna(0) >= div_min]
+        if roe_min > 0 and "ROE %" in filtered.columns:
+            filtered = filtered[filtered["ROE %"].fillna(0) >= roe_min]
+
         ascending = sort_by not in ["Value Score"]
         filtered  = filtered.sort_values(sort_by, ascending=ascending, na_position="last")
 
@@ -1712,6 +1768,19 @@ elif page == "📊 Database":
             use_container_width=True,
             hide_index=True
         )
+
+        # --- Research links for selected stock ---
+        st.divider()
+        st.markdown("#### 🔗 Research Links")
+        _db_symbols = filtered["Symbol"].tolist()
+        if _db_symbols:
+            _sel_sym = st.selectbox("Select stock", _db_symbols,
+                                    format_func=lambda s: f"{s} – {filtered.loc[filtered['Symbol']==s, 'Name'].values[0] if 'Name' in filtered.columns and len(filtered.loc[filtered['Symbol']==s]) > 0 else s}")
+            _lc1, _lc2, _lc3, _lc4 = st.columns(4)
+            _lc1.link_button("📰 Seeking Alpha", f"https://seekingalpha.com/symbol/{_sel_sym}")
+            _lc2.link_button("📈 Yahoo Finance", f"https://finance.yahoo.com/quote/{_sel_sym}")
+            _lc3.link_button("📉 GuruFocus",     f"https://www.gurufocus.com/stock/{_sel_sym}/summary")
+            _lc4.link_button("🔍 Alpha Spread",  f"https://www.alphaspread.com/security/nyse/{_sel_sym}/summary")
 
         if len(filtered) > 1:
             col1, col2 = st.columns(2)
