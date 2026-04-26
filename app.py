@@ -84,6 +84,13 @@ for key in ["last_result", "search_names", "search_symbols", "p_names", "p_symbo
     if key not in st.session_state:
         st.session_state[key] = None if key == "last_result" else []
 
+if "nav_page_index" not in st.session_state:
+    st.session_state.nav_page_index = 0
+if "db_nav_symbol" not in st.session_state:
+    st.session_state.db_nav_symbol = None
+if "came_from_db" not in st.session_state:
+    st.session_state.came_from_db = False
+
 if st.session_state.last_result is not None:
     if not isinstance(st.session_state.last_result, dict) or \
        "name" not in st.session_state.last_result:
@@ -1120,10 +1127,15 @@ def show_value_score(result):
 # SIDEBAR
 # ================================================================
 st.sidebar.title("📈 Stock Analysis")
+_NAV_PAGES = ["🔍 Analysis", "📊 Database", "🔄 Batch Analysis", "📖 Methodology"]
 page = st.sidebar.radio(
     "Navigation",
-    ["🔍 Analysis", "📊 Database", "🔄 Batch Analysis", "📖 Methodology"]
+    _NAV_PAGES,
+    index=st.session_state.nav_page_index,
+    key="nav_radio"
 )
+# Keep index in sync so programmatic navigation persists across reruns
+st.session_state.nav_page_index = _NAV_PAGES.index(page)
 st.sidebar.divider()
 st.sidebar.caption(f"Database: {len(st.session_state.database)} stocks")
 st.sidebar.caption(f"Portfolio: {len(st.session_state.portfolio)} positions")
@@ -1199,6 +1211,26 @@ if page == "🏠 Dashboard":
 # ================================================================
 elif page == "🔍 Analysis":
     st.title("Stock Analysis")
+
+    # Back button when navigated from Database
+    if st.session_state.get("came_from_db"):
+        if st.button("← Back to Database", key="back_to_db"):
+            st.session_state.came_from_db   = False
+            st.session_state.nav_page_index = 1   # 📊 Database
+            st.rerun()
+
+    # Auto-load symbol if navigated from Database
+    _nav_sym = st.session_state.get("db_nav_symbol")
+    if _nav_sym:
+        st.session_state.db_nav_symbol = None   # clear so it doesn't re-fire
+        st.info(f"Loaded from Database: **{_nav_sym}**")
+        with st.spinner(f"Loading data for {_nav_sym}..."):
+            result, error = run_dcf(_nav_sym, None, 0.02, 0.25)
+        if result:
+            st.session_state["last_auto_growth_pct"] = int(round(result["growth_assumption"]))
+            st.session_state.last_result = result
+        if error:
+            st.error(f"Error: {error}")
 
     col1, col2 = st.columns([4, 1])
     with col1:
@@ -1769,13 +1801,27 @@ elif page == "📊 Database":
             hide_index=True
         )
 
-        # --- Research links for selected stock ---
+        # --- Stock action row: analyze + research links ---
         st.divider()
-        st.markdown("#### 🔗 Research Links")
         _db_symbols = filtered["Symbol"].tolist()
         if _db_symbols:
-            _sel_sym = st.selectbox("Select stock", _db_symbols,
-                                    format_func=lambda s: f"{s} – {filtered.loc[filtered['Symbol']==s, 'Name'].values[0] if 'Name' in filtered.columns and len(filtered.loc[filtered['Symbol']==s]) > 0 else s}")
+            def _fmt_sym(s):
+                row = filtered.loc[filtered["Symbol"] == s]
+                name = row["Name"].values[0] if "Name" in filtered.columns and len(row) > 0 else s
+                return f"{s} – {name}"
+
+            _sel_sym = st.selectbox("Select stock to analyze or research:", _db_symbols,
+                                    format_func=_fmt_sym, key="db_stock_select")
+
+            _ac1, _ac2 = st.columns([1, 3])
+            with _ac1:
+                if st.button("🔍 Analyze this stock", type="primary", key="db_analyze_btn"):
+                    st.session_state.db_nav_symbol   = _sel_sym
+                    st.session_state.came_from_db    = True
+                    st.session_state.nav_page_index  = 0   # 🔍 Analysis
+                    st.rerun()
+
+            st.markdown("#### 🔗 Research Links")
             _lc1, _lc2, _lc3, _lc4 = st.columns(4)
             _lc1.link_button("📰 Seeking Alpha", f"https://seekingalpha.com/symbol/{_sel_sym}")
             _lc2.link_button("📈 Yahoo Finance", f"https://finance.yahoo.com/quote/{_sel_sym}")
