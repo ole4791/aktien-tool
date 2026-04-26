@@ -178,15 +178,16 @@ def _median(values):
     return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
 
 
-def calculate_fcf_base(cashflow):
+def calculate_fcf_base(cashflow, is_cyclical=False):
     if "Free Cash Flow" not in cashflow.index:
         return None, "not available", [], [], []
+    n_years    = 5 if is_cyclical else 5
     fcf_series = cashflow.loc["Free Cash Flow"]
-    fcf_years  = list(fcf_series.index[:5])
-    fcf_values = [round(float(v) / 1e9, 2) for v in fcf_series.values[:5]]
+    fcf_years  = list(fcf_series.index[:n_years])
+    fcf_values = [round(float(v) / 1e9, 2) for v in fcf_series.values[:n_years]]
 
     # Pair each year with its raw value, skip NaN (v == v is False for NaN)
-    year_raw = [(yr, float(v)) for yr, v in zip(fcf_years, fcf_series.values[:5]) if v == v]
+    year_raw = [(yr, float(v)) for yr, v in zip(fcf_years, fcf_series.values[:n_years]) if v == v]
     positive = [(yr, v) for yr, v in year_raw if v > 0]
 
     if not positive:
@@ -213,6 +214,13 @@ def calculate_fcf_base(cashflow):
         outlier_labels = [recent_yr]
         note = (f"✅ median of {len(positive)} years – "
                 f"{recent_yr} is outlier ({recent_raw/median_val:.0%} of median)")
+
+    elif is_cyclical:
+        # Cyclical stock: average all available positive years (up to 5) to smooth the cycle
+        top_n = [v for _, v in positive[:5]]
+        fcf   = sum(top_n) / len(top_n)
+        outlier_labels = []
+        note = f"✅ {len(top_n)}-year average (cyclical – smoothed across cycle)"
 
     else:
         # Stable earnings → 3-year average of the most recent 3 positive years
@@ -597,6 +605,7 @@ def calculate_realistic_growth(symbol, info, cashflow):
 
 
 CYCLICAL_SECTORS = {"Industrials", "Energy", "Materials", "Consumer Cyclical"}
+CYCLICAL_SYMBOLS = {"CAT","DE","ROK","ETN","EMR","DOV","PH","AME","IR","XOM","CVX","COP"}
 
 
 def generate_warnings(r):
@@ -745,7 +754,10 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
             f"Current P/E: {pe_str}. Consider P/E or EV/EBITDA valuation instead."
         )
 
-    fcf, fcf_note, fcf_history, fcf_years, fcf_outliers = calculate_fcf_base(cashflow)
+    sector       = info.get("sector", "")
+    is_cyclical  = sector in CYCLICAL_SECTORS or symbol.upper() in CYCLICAL_SYMBOLS
+
+    fcf, fcf_note, fcf_history, fcf_years, fcf_outliers = calculate_fcf_base(cashflow, is_cyclical)
     if fcf is None:
         return None, "Free Cash Flow not available"
 
@@ -755,8 +767,16 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
 
     growth_auto    = growth is None
     growth_sources = []
+    growth_capped_cyclical = False
     if growth_auto:
         growth, growth_sources = calculate_realistic_growth(symbol, info, cashflow)
+
+    # Cap growth at sector default for cyclicals to avoid peak-cycle overestimation
+    if is_cyclical:
+        cyclical_cap = SECTOR_DEFAULTS.get(sector, 0.06)
+        if growth > cyclical_cap:
+            growth = cyclical_cap
+            growth_capped_cyclical = True
 
     # --- Currency conversion: financials may be in a different currency than the stock price ---
     fin_ccy    = (info.get("financialCurrency") or "").upper()
@@ -916,9 +936,10 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
         "net_margin":         info.get("profitMargins"),
         "dividend":           info.get("dividendYield"),
         "revenue_growth":     round(rev_growth, 1) if rev_growth else None,
-        "growth_assumption":    round(growth * 100, 1),
-        "growth_auto":          growth_auto,
-        "growth_sources":       growth_sources,
+        "growth_assumption":        round(growth * 100, 1),
+        "growth_auto":              growth_auto,
+        "growth_capped_cyclical":   growth_capped_cyclical,
+        "growth_sources":           growth_sources,
         "terminal_assumption":  round(terminal * 100, 1),
         "terminal_original":    round(terminal_original * 100, 1),
         "terminal_capped":      terminal_capped,
@@ -1251,9 +1272,11 @@ elif page == "🔍 Analysis":
                 f"{s['name']} {s['value']:+.1f}% (weight {s['weight']}%)"
                 for s in r["growth_sources"]
             )
+            cap_note = (f" · ⚠️ capped at {r['growth_assumption']:.1f}% (cyclical sector cap)"
+                        if r.get("growth_capped_cyclical") else "")
             st.info(
                 f"Auto-calculated FCF growth rate: **{r['growth_assumption']:.1f}%** "
-                f"(20% conservative haircut applied)  \n"
+                f"(20% conservative haircut applied){cap_note}  \n"
                 f"Sources: {src_parts}"
             )
         elif not r.get("growth_auto"):
