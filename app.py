@@ -709,6 +709,22 @@ def generate_warnings(r):
             f"{r.get('terminal_assumption', 0):.1f}% based on sector limits. "
             f"{r.get('terminal_desc', '')}"))
 
+    # 8. Leverage-adjusted WACC warning
+    if r.get("leverage_warning"):
+        warns.append(r["leverage_warning"])
+
+    # 9. Net Debt > 70% of Enterprise Value
+    if r.get("high_debt_ev_warning"):
+        warns.append(("⚠️", "Net Debt dominates Enterprise Value",
+            r["high_debt_ev_warning"]))
+
+    # 10. Terminal Value unreliable (TV > 10× Market Cap)
+    if r.get("tv_unreliable"):
+        warns.append(("🔴", "Terminal Value exceeds 10× Market Cap",
+            f"Discounted Terminal Value is {r.get('tv_to_mktcap', 0):.0f}× Market Cap. "
+            "DCF result is unreliable for this capital structure. "
+            "Consider EV/EBITDA or P/E comparison instead."))
+
     return warns
 
 
@@ -842,6 +858,28 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     debt_w     = wc["debt_weight"]
     wacc = wacc_override if wacc_override else wacc_calc
 
+    # --- Leverage-adjusted WACC floor ---
+    # High debt pulls WACC down via cheap after-tax cost of debt, creating unrealistic EVs.
+    # Apply a floor that reflects the amplified equity risk not captured by CAPM alone.
+    leverage_warning = None
+    net_debt_ratio   = net_debt / mktcap if mktcap > 0 else 0
+    if not wacc_override:
+        if net_debt_ratio > 2.0:
+            wacc = max(wacc, 0.10)
+            leverage_warning = ("🔴", "Very high leverage",
+                f"Net Debt is {net_debt_ratio:.1f}× Market Cap. "
+                "WACC floored at 10% to reflect amplified equity risk.")
+        elif net_debt_ratio > 1.0:
+            wacc = max(wacc, 0.085)
+            leverage_warning = ("⚠️", "High leverage",
+                f"Net Debt exceeds Market Cap ({net_debt_ratio:.1f}×). "
+                "WACC adjusted upward to 8.5% minimum.")
+        elif net_debt_ratio > 0.5:
+            wacc = max(wacc, 0.075)
+            leverage_warning = ("⚠️", "Elevated leverage",
+                f"Net Debt is {net_debt_ratio:.1f}× Market Cap. "
+                "WACC floored at 7.5%.")
+
     # --- Sector-aware terminal growth cap ---
     rev_g_info  = info.get("revenueGrowth")   # fast proxy; full calc happens later
     term_default, term_max, term_desc = get_terminal_growth_default(
@@ -866,6 +904,23 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     tv         = current_fcf * (1 + terminal) / (wacc - terminal)
     tv_disc    = tv / (1 + wacc) ** 10
     enterprise = sum(discounted) + tv_disc
+
+    # --- Terminal Value sanity cap ---
+    tv_unreliable = False
+    tv_to_mktcap  = tv_disc / mktcap if mktcap > 0 else 0
+    if tv_to_mktcap > 10:
+        tv_unreliable = True
+
+    # --- Net Debt coverage check ---
+    high_debt_ev_warning = None
+    if enterprise > 0 and net_debt > enterprise * 0.7:
+        high_debt_ev_warning = (
+            f"Net Debt (${net_debt/1e9:.1f}B) represents "
+            f"{net_debt/enterprise*100:.0f}% of DCF Enterprise Value (${enterprise/1e9:.1f}B). "
+            "Equity holders bear amplified risk not captured by standard DCF. "
+            "Intrinsic value shown is a theoretical upper bound."
+        )
+
     equity     = enterprise - net_debt
     neg_book_equity  = (info.get("priceToBook") or 1) < 0
     neg_equity_warning = None
@@ -997,8 +1052,13 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
         "weighted_intrinsic":   round(weighted_iv, 2),
         "weighted_with_margin": round(weighted_mos, 2),
         "weighted_deviation":   round(weighted_dev, 1),
-        "neg_book_equity":      neg_book_equity,
-        "neg_equity_warning":   neg_equity_warning,
+        "neg_book_equity":        neg_book_equity,
+        "neg_equity_warning":     neg_equity_warning,
+        "leverage_warning":       leverage_warning,
+        "high_debt_ev_warning":   high_debt_ev_warning,
+        "tv_unreliable":          tv_unreliable,
+        "tv_to_mktcap":           round(tv_to_mktcap, 1),
+        "net_debt_ratio":         round(net_debt_ratio, 2),
         "return_on_assets":     info.get("returnOnAssets"),
         "last_updated":         datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
