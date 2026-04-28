@@ -561,7 +561,10 @@ def calculate_realistic_growth(symbol, info, cashflow):
                     n_yrs = oldest_i  # index 0 is most recent, so span = oldest_i years
                     if n_yrs > 0 and oldest_v > 0:
                         cagr = (recent_v / oldest_v) ** (1 / n_yrs) - 1
-                        cagr = max(-0.10, min(0.25, cagr))
+                        # Dampen explosive CAGRs rather than hard-capping them
+                        if cagr > 0.50:
+                            cagr = 0.50 + (cagr - 0.50) * 0.20
+                        cagr = max(-0.10, cagr)
                         rates.append(cagr)
                         weights.append(fcf_cagr_weight)
                         sources.append({"name": "Historical FCF CAGR (growth span)",
@@ -577,7 +580,9 @@ def calculate_realistic_growth(symbol, info, cashflow):
                         n_yrs = end_i - start_i
                         if n_yrs > 0 and end_v > 0:
                             cagr = (start_v / end_v) ** (1 / n_yrs) - 1
-                            cagr = max(-0.10, min(0.25, cagr))
+                            if cagr > 0.50:
+                                cagr = 0.50 + (cagr - 0.50) * 0.20
+                            cagr = max(-0.10, cagr)
                             rates.append(cagr)
                             weights.append(fcf_cagr_weight)
                             sources.append({"name": "Historical FCF CAGR",
@@ -586,9 +591,9 @@ def calculate_realistic_growth(symbol, info, cashflow):
     except Exception:
         pass
 
-    # Source 2: Analyst EPS growth forecast – cap at 50% rather than exclude
+    # Source 2: Analyst EPS growth forecast – cap at 150% to include explosive growers
     if earnings_growth and earnings_growth > -0.30:
-        eg_used = min(earnings_growth, 0.50)
+        eg_used = min(earnings_growth, 1.50)
         rates.append(eg_used)
         weights.append(analyst_weight)
         sources.append({"name": "Analyst EPS estimate",
@@ -849,12 +854,14 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     growth_cap_applied = None   # (cap_value, reason_str)
     if growth > 0.12 and not is_cyclical:
         _analyst_est = (info.get("earningsGrowth") or 0) * 100   # e.g. 0.35 → 35
-        _hist_cagr   = _early_fcf_cagr or 0
+        _raw_cagr    = _early_fcf_cagr or 0
+        # Apply same dampening as calculate_realistic_growth for consistency
+        _hist_cagr   = (50 + (_raw_cagr - 50) * 0.20) if _raw_cagr > 50 else _raw_cagr
 
         if _hist_cagr > 20 and _analyst_est > 15:
             # Both sources confirm explosive growth (e.g. NVDA) – allow up to 30%
             cap = 0.30
-            reason = f"verified explosive growth (FCF CAGR {_hist_cagr:.0f}%, analyst {_analyst_est:.0f}%) – cap 30%"
+            reason = f"explosive FCF growth confirmed by historical CAGR ({_hist_cagr:.0f}% dampened) and analyst estimates ({_analyst_est:.0f}%)"
         elif _hist_cagr > 12 and _analyst_est > 10:
             # Both sources confirm strong growth (e.g. MSFT, NFLX) – allow up to 20%
             cap = 0.20
