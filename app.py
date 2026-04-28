@@ -844,13 +844,36 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
             growth = cyclical_cap
             growth_capped_cyclical = True
 
-    # Cap growth at 12% for stable companies where analyst estimates run hot
-    # but historical FCF CAGR doesn't support >15% growth
-    if growth > 0.15 and not is_cyclical:
-        fcf_cagr_supports_growth = (_early_fcf_cagr is not None and _early_fcf_cagr > 15)
-        if not fcf_cagr_supports_growth:
-            growth = 0.12
+    # Evidence-based growth cap: allow higher rates only when both historical FCF
+    # CAGR and analyst estimates independently confirm strong growth.
+    growth_cap_applied = None   # (cap_value, reason_str)
+    if growth > 0.12 and not is_cyclical:
+        _analyst_est = (info.get("earningsGrowth") or 0) * 100   # e.g. 0.35 → 35
+        _hist_cagr   = _early_fcf_cagr or 0
+
+        if _hist_cagr > 20 and _analyst_est > 15:
+            # Both sources confirm explosive growth (e.g. NVDA) – allow up to 30%
+            cap = 0.30
+            reason = f"verified explosive growth (FCF CAGR {_hist_cagr:.0f}%, analyst {_analyst_est:.0f}%) – cap 30%"
+        elif _hist_cagr > 12 and _analyst_est > 10:
+            # Both sources confirm strong growth (e.g. MSFT, NFLX) – allow up to 20%
+            cap = 0.20
+            reason = f"confirmed strong growth (FCF CAGR {_hist_cagr:.0f}%, analyst {_analyst_est:.0f}%) – cap 20%"
+        elif _hist_cagr > 12 or _analyst_est > 15:
+            # Only one source supports high growth – allow up to 15%
+            cap = 0.15
+            reason = (f"one source supports growth (FCF CAGR {_hist_cagr:.0f}%) – cap 15%"
+                      if _hist_cagr > 12
+                      else f"one source supports growth (analyst {_analyst_est:.0f}%) – cap 15%")
+        else:
+            # Neither source confirms high growth – conservative 12% cap
+            cap = 0.12
+            reason = f"insufficient evidence for high growth (FCF CAGR {_hist_cagr:.0f}%, analyst {_analyst_est:.0f}%) – cap 12%"
+
+        if growth > cap:
+            growth = cap
             growth_capped_stable = True
+            growth_cap_applied = (cap, reason)
 
     # --- Currency conversion: financials may be in a different currency than the stock price ---
     fin_ccy    = (info.get("financialCurrency") or "").upper()
@@ -1059,6 +1082,7 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
         "growth_auto":              growth_auto,
         "growth_capped_cyclical":   growth_capped_cyclical,
         "growth_capped_stable":     growth_capped_stable,
+        "growth_cap_applied":       growth_cap_applied,
         "growth_sources":           growth_sources,
         "terminal_assumption":  round(terminal * 100, 1),
         "terminal_original":    round(terminal_original * 100, 1),
@@ -1445,8 +1469,9 @@ elif page == "🔍 Analysis":
             )
             if r.get("growth_capped_cyclical"):
                 cap_note = f" · ⚠️ capped at {r['growth_assumption']:.1f}% (cyclical sector cap)"
-            elif r.get("growth_capped_stable"):
-                cap_note = f" · ⚠️ capped at {r['growth_assumption']:.1f}% (analyst estimate >15% but FCF CAGR does not support it)"
+            elif r.get("growth_capped_stable") and r.get("growth_cap_applied"):
+                _cap_val, _cap_reason = r["growth_cap_applied"]
+                cap_note = f" · ⚠️ capped at {_cap_val*100:.0f}%: {_cap_reason}"
             else:
                 cap_note = ""
             st.info(
