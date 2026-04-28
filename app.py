@@ -118,7 +118,7 @@ INDEX_GROUPS = {
         "AAPL","MSFT","GOOGL","META","NVDA","AVGO","CSCO","IBM",
         "ORCL","TXN","QCOM","ADI","KLAC","LRCX","AMAT","MSI",
         "INTU","PAYX","ADP","FISV","FIS","GPN","PYPL","V","MA",
-        "AXP","COF","DFS","SYF","CTSH","ACN","IT","GDDY","AKAM",
+        "AXP","DFS","SYF","CTSH","ACN","IT","GDDY","AKAM",
         "CDW","NTAP","SNPS","CDNS","ANSS","PTC","TYL","DELL","HPQ",
     ],
     "S&P 500 – Industrials": [
@@ -164,12 +164,12 @@ INDEX_GROUPS["🌐 Full Universe"] = VALUE_UNIVERSE
 # Traditional banks and insurers where DCF truly doesn't apply
 DCF_EXEMPT = {
     "JPM","BAC","WFC","C","GS","MS","USB","TFC",
-    "AIG","PRU","MET","AFL","BRK-B",
+    "AIG","PRU","MET","AFL","BRK-B","COF",  # COF is a bank – credit cards, DCF not suitable
 }
 
 # Fintech/payments with strong FCF – DCF applies despite "Financial" sector label
 DCF_APPLICABLE = {
-    "PYPL","SQ","V","MA","AXP","COF","DFS","COIN",
+    "PYPL","SQ","V","MA","AXP","DFS","COIN",
 }
 
 # Stocks where DCF is not reliable due to volatile/insufficient FCF history
@@ -617,6 +617,9 @@ def calculate_realistic_growth(symbol, info, cashflow):
 CYCLICAL_SECTORS = {"Industrials", "Energy", "Materials", "Consumer Cyclical"}
 CYCLICAL_SYMBOLS = {"CAT","DE","ROK","ETN","EMR","DOV","PH","AME","IR","XOM","CVX","COP"}
 
+# High-leverage + regulated + capex-heavy telecoms need a higher WACC floor
+TELECOM_SYMBOLS = {"VZ", "T", "CMCSA", "CHTR", "TMUS"}
+
 
 def is_dcf_suitable(symbol, info, cashflow):
     """Return (suitable: bool, reason: str). Used by batch loop to skip unsuitable stocks."""
@@ -819,9 +822,18 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     if not shares:
         return None, "Shares outstanding not available"
 
+    # Early FCF CAGR estimate (used below for growth sanity cap)
+    _early_fcf_cagr = None
+    try:
+        if len(fcf_history) >= 2 and fcf_history[-1] > 0 and fcf_history[0] > 0:
+            _early_fcf_cagr = ((fcf_history[0] / fcf_history[-1]) ** (1 / (len(fcf_history) - 1)) - 1) * 100
+    except Exception:
+        pass
+
     growth_auto    = growth is None
     growth_sources = []
     growth_capped_cyclical = False
+    growth_capped_stable   = False
     if growth_auto:
         growth, growth_sources = calculate_realistic_growth(symbol, info, cashflow)
 
@@ -831,6 +843,14 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
         if growth > cyclical_cap:
             growth = cyclical_cap
             growth_capped_cyclical = True
+
+    # Cap growth at 12% for stable companies where analyst estimates run hot
+    # but historical FCF CAGR doesn't support >15% growth
+    if growth > 0.15 and not is_cyclical:
+        fcf_cagr_supports_growth = (_early_fcf_cagr is not None and _early_fcf_cagr > 15)
+        if not fcf_cagr_supports_growth:
+            growth = 0.12
+            growth_capped_stable = True
 
     # --- Currency conversion: financials may be in a different currency than the stock price ---
     fin_ccy    = (info.get("financialCurrency") or "").upper()
@@ -864,7 +884,13 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
     leverage_warning = None
     net_debt_ratio   = net_debt / mktcap if mktcap > 0 else 0
     if not wacc_override:
-        if net_debt_ratio > 2.0:
+        # Telecom floor first – overrides general leverage tiers
+        if symbol.upper() in TELECOM_SYMBOLS:
+            wacc = max(wacc, 0.09)
+            leverage_warning = ("⚠️", "Telecom WACC floor",
+                f"High leverage + regulated industry + heavy capex. "
+                "WACC floored at 9% for telecom companies.")
+        elif net_debt_ratio > 2.0:
             wacc = max(wacc, 0.10)
             leverage_warning = ("🔴", "Very high leverage",
                 f"Net Debt is {net_debt_ratio:.1f}× Market Cap. "
@@ -1032,6 +1058,7 @@ def run_dcf(symbol, growth=None, terminal=0.03, margin_of_safety=0.25, wacc_over
         "growth_assumption":        round(growth * 100, 1),
         "growth_auto":              growth_auto,
         "growth_capped_cyclical":   growth_capped_cyclical,
+        "growth_capped_stable":     growth_capped_stable,
         "growth_sources":           growth_sources,
         "terminal_assumption":  round(terminal * 100, 1),
         "terminal_original":    round(terminal_original * 100, 1),
@@ -1368,6 +1395,27 @@ elif page == "🔍 Analysis":
 
     if st.session_state.last_result:
         r = st.session_state.last_result
+
+        # Debug output for GDDY (temporary – remove once validated)
+        if r.get("symbol", "").upper() == "GDDY":
+            with st.expander("🐛 GDDY Debug", expanded=True):
+                st.write(f"**FCF base:** ${r['fcf']:.2f}B")
+                st.write(f"**Growth rate:** {r['growth_assumption']:.1f}%"
+                         + (" (capped – stable)" if r.get("growth_capped_stable") else ""))
+                st.write(f"**WACC:** {r['wacc']:.2f}%")
+                st.write(f"**Terminal:** {r['terminal_assumption']:.1f}%")
+                st.write(f"**Net Debt:** ${r['net_debt']:.2f}B")
+                st.write(f"**Net Debt ratio:** {r.get('net_debt_ratio', 0):.2f}× mktcap")
+                st.write(f"**Sum discounted FCFs:** ${r['sum_discounted']:.2f}B")
+                st.write(f"**Terminal Value (disc):** ${r['terminal_value']:.2f}B")
+                st.write(f"**Enterprise Value:** ${r['sum_discounted'] + r['terminal_value']:.2f}B")
+                st.write(f"**Intrinsic Value:** ${r['intrinsic']:.2f}")
+                st.write(f"**FCF CAGR:** {r['fcf_cagr']:.1f}%" if r.get('fcf_cagr') else "**FCF CAGR:** N/A")
+                if r.get("growth_sources"):
+                    st.write("**Growth sources:**")
+                    for s in r["growth_sources"]:
+                        st.write(f"  • {s['name']}: {s['value']:+.1f}% (weight {s['weight']}%)")
+
         st.divider()
         st.subheader(f"{r['name']} ({r['symbol']})")
         st.caption(f"Sector: {r['sector']}  ·  Last updated: {r.get('last_updated','')}")
@@ -1395,8 +1443,12 @@ elif page == "🔍 Analysis":
                 f"{s['name']} {s['value']:+.1f}% (weight {s['weight']}%)"
                 for s in r["growth_sources"]
             )
-            cap_note = (f" · ⚠️ capped at {r['growth_assumption']:.1f}% (cyclical sector cap)"
-                        if r.get("growth_capped_cyclical") else "")
+            if r.get("growth_capped_cyclical"):
+                cap_note = f" · ⚠️ capped at {r['growth_assumption']:.1f}% (cyclical sector cap)"
+            elif r.get("growth_capped_stable"):
+                cap_note = f" · ⚠️ capped at {r['growth_assumption']:.1f}% (analyst estimate >15% but FCF CAGR does not support it)"
+            else:
+                cap_note = ""
             st.info(
                 f"Auto-calculated FCF growth rate: **{r['growth_assumption']:.1f}%** "
                 f"(20% conservative haircut applied){cap_note}  \n"
